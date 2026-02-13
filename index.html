@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pro Analyst Terminal</title>
+    <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+    <div id="main-toolbar">
+        <div class="tool-group">
+            <button id="tool-cursor" class="tool-btn active">📍 Curseur</button>
+            <button id="tool-hline" class="tool-btn">— Ligne Horiz</button>
+            <button id="tool-fib" class="tool-btn">📊 Fibonacci</button>
+            <button id="tool-position" class="tool-btn">🎯 Position</button>
+        </div>
+    </div>
+
+    <div class="tv-header">
+        <select id="asset-select">
+            <option value="BTCUSDT">BTC/USDT</option>
+            <option value="PAXGUSDT">XAU/USD (OR)</option>
+            <option value="EURUSDT">EUR/USD</option>
+            <option value="NQUSDT">NAS100</option>
+            <option value="SPXUSDT">S&P 500</option>
+        </select>
+        <div id="tf-bar" class="timeframe-bar">
+            <button class="tf-btn active" data-tf="1m">1m</button>
+            <button class="tf-btn" data-tf="5m">5m</button>
+            <button class="tf-btn" data-tf="15m">15m</button>
+            <button class="tf-btn" data-tf="30m">30m</button>
+            <button class="tf-btn" data-tf="1h">1h</button>
+            <button class="tf-btn" data-tf="4h">4h</button>
+            <button class="tf-btn" data-tf="1d">1d</button>
+            <button class="tf-btn" data-tf="1w">1w</button>
+            <button class="tf-btn" data-tf="1M">1M</button>
+        </div>
+    </div>
+
+    <div id="chart-container"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
