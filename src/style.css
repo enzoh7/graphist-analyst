@@ -27,13 +27,14 @@ body {
 }
 
 #main-toolbar {
-  height: 42px;
   background: var(--header-bg);
   border-bottom: 1px solid var(--border-color);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   padding: 0 12px;
   flex-shrink: 0;
+  gap: 12px;
 }
 
 .tool-group {
@@ -76,9 +77,108 @@ body {
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 8px;
   gap: 16px;
   flex-shrink: 0;
+}
+
+.tv-header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ========== BOUTONS BUY/SELL/CONFIG ========== */
+
+.trading-quick-buttons {
+  position: fixed;
+  top: 38px;
+  right: 12px;
+  display: flex;
+  gap: 8px;
+  z-index: 99;
+  background: linear-gradient(135deg, rgba(20, 20, 30, 0.95) 0%, rgba(30, 30, 40, 0.95) 100%);
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+.quick-btn {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  height: 36px;
+}
+
+/* BOUTON BUY */
+.buy-btn {
+  background: linear-gradient(135deg, #093b1e 0%, #27ae60 100%);
+  color: white;
+  border: 2px solid #0a3f20;
+  box-shadow: 0 4px 12px rgba(4, 49, 23, 0.3);
+}
+
+.buy-btn:hover {
+  background: linear-gradient(135deg, #27ae60 0%, #000000 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(46, 204, 113, 0.5);
+}
+
+.buy-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(46, 204, 113, 0.3);
+}
+
+/* BOUTON CONFIG (ROUE CRANTÉE) */
+.config-btn {
+  background: linear-gradient(135deg, #033507 1%, #920000 99%);
+  color: white;
+  border: 2px solid #000000;
+  padding: 10px 12px;
+  font-size: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.config-btn:hover {
+  background: linear-gradient(135deg,  #920000 0%, #033507 100%);
+  transform: scale(1.08) rotate(180deg);
+  box-shadow: 0 6px 16px rgba(17, 11, 1, 0.5);
+}
+
+.config-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 2px 8px rgba(17, 11, 1, 0.3);
+}
+
+
+
+/* BOUTON SELL */
+.sell-btn {
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  color: white;
+  border: 2px solid #c0392b;
+  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+}
+
+.sell-btn:hover {
+  background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.5);
+}
+
+.sell-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(231, 76, 60, 0.3);
 }
 
 #asset-select {
@@ -127,4 +227,839 @@ body {
   height: 100%;
   position: relative;
   overflow: hidden;
+}
+
+/* ========== OVERLAY DE PROPRIÉTÉS ========== */
+.drawing-overlay {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.6);
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.drawing-overlay.active {
+  display: flex;
+}
+
+.overlay-modal {
+  background: var(--header-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+  width: 90%;
+  max-width: 400px;
+  max-height: 80vh;
+  overflow-y: auto;
+  color: var(--text-color);
+}
+
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.overlay-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.overlay-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-color);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-close-btn:hover {
+  color: var(--active-blue);
+}
+
+.overlay-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.overlay-tab-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-color);
+  padding: 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.overlay-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.overlay-tab-btn.active {
+  color: var(--active-blue);
+  border-bottom-color: var(--active-blue);
+}
+
+.overlay-tab-pane {
+  display: none;
+  padding: 16px;
+}
+
+.overlay-tab-pane.active {
+  display: block;
+}
+
+.form-group {
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #a6acb8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  transition: border 0.2s;
+}
+
+.form-group input[type="text"]:focus,
+.form-group input[type="number"]:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--active-blue);
+  background: rgba(41, 98, 255, 0.1);
+}
+
+.form-group input[type="color"] {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.overlay-footer {
+  display: flex;
+  gap: 8px;
+  padding: 16px;
+  border-top: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.btn-danger,
+.btn-primary {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-danger {
+  background: rgba(239, 83, 80, 0.1);
+  color: #ef5350;
+  border-color: #ef5350;
+}
+
+.btn-danger:hover {
+  background: rgba(239, 83, 80, 0.2);
+}
+
+.btn-primary {
+  background: var(--active-blue);
+  color: white;
+  border-color: var(--active-blue);
+}
+
+.btn-primary:hover {
+  background: #1e53e5;
+}
+
+/* ========== PANNEAU DE TRADING ========== */
+.trading-panel {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 350px;
+  background: var(--header-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  max-height: 100px;
+  overflow: hidden;
+  transition: max-height 0.4s ease, height 0.4s ease;
+}
+
+.trading-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-bottom: 1px solid var(--border-color);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.trading-header h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.server-status {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.server-status.online {
+  color: #26a69a;
+  background: rgba(38, 166, 154, 0.1);
+}
+
+.server-status.offline {
+  color: #ef5350;
+  background: rgba(239, 83, 80, 0.1);
+}
+
+.trade-form {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.4s ease;
+}
+
+.trade-form.hidden {
+  display: none !important;
+}
+
+.radio-group {
+  display: flex;
+  gap: 8px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  cursor: pointer;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.radio-label input[type="radio"] {
+  margin-right: 6px;
+  cursor: pointer;
+}
+
+.radio-label input[type="radio"]:checked + span {
+  font-weight: 600;
+}
+
+.radio-buy {
+  color: #26a69a;
+}
+
+.radio-label:has(input[value="buy"]:checked) {
+  border-color: #26a69a;
+  background: rgba(38, 166, 154, 0.1);
+}
+
+.radio-sell {
+  color: #ef5350;
+}
+
+.radio-label:has(input[value="sell"]:checked) {
+  border-color: #ef5350;
+  background: rgba(239, 83, 80, 0.1);
+}
+
+.trading-buttons {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.btn-trade,
+.btn-secondary {
+  padding: 10px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-trade {
+  background: var(--active-blue);
+  color: white;
+}
+
+.btn-trade:hover:not(:disabled) {
+  background: #1e53e5;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(41, 98, 255, 0.3);
+}
+
+.btn-trade:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.order-status {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+  display: none;
+  word-wrap: break-word;
+}
+
+.order-status.success {
+  display: block;
+  background: rgba(38, 166, 154, 0.1);
+  color: #26a69a;
+  border: 1px solid rgba(38, 166, 154, 0.3);
+}
+
+.order-status.error {
+  display: block;
+  background: rgba(239, 83, 80, 0.1);
+  color: #ef5350;
+  border: 1px solid rgba(239, 83, 80, 0.3);
+}
+
+.order-status.loading {
+  display: block;
+  background: rgba(41, 98, 255, 0.1);
+  color: #2962ff;
+  border: 1px solid rgba(41, 98, 255, 0.3);
+}
+/* ========== AUTHENTIFICATION ========== */
+
+.auth-button-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-btn {
+  background: linear-gradient(135deg, #2962ff 0%, #1a47a0 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(41, 98, 255, 0.3);
+}
+
+.auth-btn:hover {
+  background: linear-gradient(135deg, #3a7eff 0%, #2056b0 100%);
+  box-shadow: 0 4px 12px rgba(41, 98, 255, 0.5);
+}
+
+.auth-btn.logged-in {
+  background: rgba(38, 166, 154, 0.2);
+  color: #26a69a;
+  border: 1px solid rgba(38, 166, 154, 0.5);
+}
+
+/* ========== MODAL D'AUTHENTIFICATION ========== */
+
+.auth-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: none;
+}
+
+.auth-modal.active {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.auth-modal-content {
+  position: relative;
+  background: var(--header-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 420px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.auth-modal-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.auth-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.auth-modal-close {
+  background: transparent;
+  border: none;
+  color: var(--text-color);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.auth-modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #2962ff;
+}
+
+/* ========== ONGLETS D'AUTHENTIFICATION ========== */
+
+.auth-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.auth-tab-btn {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-color);
+  padding: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  font-size: 13px;
+  border-bottom: 3px solid transparent;
+  transition: all 0.2s;
+}
+
+.auth-tab-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.auth-tab-btn.active {
+  color: #2962ff;
+  border-bottom-color: #2962ff;
+}
+
+.auth-tab-pane {
+  display: none;
+  padding: 20px;
+}
+
+.auth-tab-pane.active {
+  display: block;
+}
+
+/* ========== FORMULAIRES D'AUTHENTIFICATION ========== */
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-form label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-color);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.auth-form input,
+.auth-form select {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.auth-form input:focus,
+.auth-form select:focus {
+  outline: none;
+  border-color: #2962ff;
+  background: rgba(41, 98, 255, 0.1);
+  box-shadow: 0 0 8px rgba(41, 98, 255, 0.3);
+}
+
+.auth-form input::placeholder {
+  color: rgba(209, 212, 220, 0.5);
+}
+
+.auth-error {
+  padding: 10px 12px;
+  background: rgba(239, 83, 80, 0.1);
+  border: 1px solid rgba(239, 83, 80, 0.3);
+  color: #ef5350;
+  border-radius: 4px;
+  font-size: 12px;
+  display: none;
+  text-align: center;
+}
+
+.auth-error.show {
+  display: block;
+}
+
+.auth-success {
+  padding: 10px 12px;
+  background: rgba(38, 166, 154, 0.1);
+  border: 1px solid rgba(38, 166, 154, 0.3);
+  color: #26a69a;
+  border-radius: 4px;
+  font-size: 12px;
+  display: none;
+  text-align: center;
+}
+
+.auth-success.show {
+  display: block;
+}
+
+.auth-loading {
+  display: none;
+  text-align: center;
+  color: #2962ff;
+  font-size: 12px;
+  padding: 8px;
+}
+
+.auth-loading.show {
+  display: block;
+}
+
+.auth-loading::after {
+  content: ' ⏳';
+  animation: blink 1.4s infinite;
+}
+
+@keyframes blink {
+  0%, 20%, 50%, 80%, 100% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0.5;
+  }
+  60% {
+    opacity: 0.7;
+  }
+}
+
+/* ========== CONFIGURATION BROKER ========== */
+
+.auth-broker-section {
+  padding: 20px;
+  border-top: 1px solid var(--border-color);
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.auth-broker-section.hidden {
+  display: none;
+}
+
+.auth-section-divider {
+  text-align: center;
+  color: rgba(209, 212, 220, 0.5);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* ========== SECTION UTILISATEUR CONNECTÉ ========== */
+
+.auth-user-section {
+  padding: 20px;
+  border-top: 1px solid var(--border-color);
+  display: none;
+}
+
+.auth-user-section.active {
+  display: block;
+}
+
+.auth-user-info {
+  padding: 12px;
+  background: rgba(41, 98, 255, 0.1);
+  border: 1px solid rgba(41, 98, 255, 0.3);
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.auth-user-info p {
+  margin: 0;
+}
+
+.auth-preferences {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  user-select: none;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: #2962ff;
+}
+
+.auth-preferences label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.auth-preferences select {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-color);
+  padding: 8px;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+/* ========== STATUT BROKER ========== */
+
+.broker-status-badge {
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+
+.broker-status-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.broker-status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.broker-status-indicator.offline {
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.broker-status-indicator.online {
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+.broker-details-section {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+  display: none;
+}
+
+.broker-details-section.active {
+  display: block;
+}
+
+.broker-details p {
+  margin: 6px 0;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.broker-details strong {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.status-badge.online {
+  color: #2ecc71;
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+.status-badge.offline {
+  color: #e74c3c;
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+/* ========== BOUTONS GÉNÉRIQUES ========== */
+
+.full-width {
+  width: 100%;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #2962ff 0%, #1a47a0 100%);
+  color: white;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  transition: all 0.3s;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #3a7eff 0%, #2056b0 100%);
+  box-shadow: 0 4px 12px rgba(41, 98, 255, 0.4);
+}
+
+.btn-danger {
+  background: rgba(239, 83, 80, 0.1);
+  color: #ef5350;
+  border: 1px solid rgba(239, 83, 80, 0.3);
+  padding: 10px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+  transition: all 0.3s;
+}
+
+.btn-danger:hover {
+  background: rgba(239, 83, 80, 0.2);
+  border-color: rgba(239, 83, 80, 0.5);
 }
