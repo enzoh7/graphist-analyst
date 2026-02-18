@@ -7,38 +7,401 @@
     <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
+    <!-- BARRE D'OUTILS -->
+         <div class="tv-header">
+        <div class="tv-header-left">
+            <select id="asset-select">
+                <option value="XAUUSD" selected>XAU/USD </option>
+                <option value="BTCUSDT">BTC/USDT</option>
+                <option value="EURUSD">EUR/USD</option>
+                <option value="GBPUSD">GBP/USD</option>
+                <option value="USDJPY">USD/JPY</option>
+            </select>
+            <div id="tf-bar" class="timeframe-bar">
+                <button class="tf-btn active" data-tf="1m">1m</button>
+                <button class="tf-btn" data-tf="5m">5m</button>
+                <button class="tf-btn" data-tf="15m">15m</button>
+                <button class="tf-btn" data-tf="30m">30m</button>
+                <button class="tf-btn" data-tf="1h">1h</button>
+                <button class="tf-btn" data-tf="4h">4h</button>
+                <button class="tf-btn" data-tf="1d">1d</button>
+                <button class="tf-btn" data-tf="1w">1w</button>
+                <button class="tf-btn" data-tf="1M">1M</button>
+            </div>
+        </div>
+        <div id="auth-button-container" class="auth-button-container">
+            <button id="auth-toggle-btn" class="auth-btn">🔐 Connexion</button>
+        </div>
+    </div>
+
+    <!-- BOUTONS BUY/SELL/CONFIG (SOULEVÉ EN HAUT À DROITE) -->
+    <div class="trading-quick-buttons">
+        <button id="quick-buy-btn" class="quick-btn buy-btn" title="Acheter directement (BUY)">
+            🔼 BUY
+        </button>
+        <button id="quick-config-btn" class="quick-btn config-btn" title="Configuration d'ordre avancée">
+            ⚙️
+        </button>
+        <button id="quick-sell-btn" class="quick-btn sell-btn" title="Vendre directement (SELL)">
+            🔽 SELL
+        </button>
+    </div>
     <div id="main-toolbar">
         <div class="tool-group">
             <button id="tool-cursor" class="tool-btn active">📍 Curseur</button>
             <button id="tool-hline" class="tool-btn">— Ligne Horiz</button>
+            <button id="tool-rect" class="tool-btn">⬜ Rectangle</button>
             <button id="tool-fib" class="tool-btn">📊 Fibonacci</button>
+        </div>
+        <div class="tool-group">
             <button id="tool-position" class="tool-btn">🎯 Position</button>
         </div>
     </div>
 
-    <div class="tv-header">
-        <select id="asset-select">
-            <option value="BTCUSDT">BTC/USDT</option>
-            <option value="PAXGUSDT">XAU/USD (OR)</option>
-            <option value="EURUSDT">EUR/USD</option>
-            <option value="NQUSDT">NAS100</option>
-            <option value="SPXUSDT">S&P 500</option>
-        </select>
-        <div id="tf-bar" class="timeframe-bar">
-            <button class="tf-btn active" data-tf="1m">1m</button>
-            <button class="tf-btn" data-tf="5m">5m</button>
-            <button class="tf-btn" data-tf="15m">15m</button>
-            <button class="tf-btn" data-tf="30m">30m</button>
-            <button class="tf-btn" data-tf="1h">1h</button>
-            <button class="tf-btn" data-tf="4h">4h</button>
-            <button class="tf-btn" data-tf="1d">1d</button>
-            <button class="tf-btn" data-tf="1w">1w</button>
-            <button class="tf-btn" data-tf="1M">1M</button>
+    <!-- HEADER (ASSET + TIMEFRAMES) -->
+
+
+    <!-- CONTENEUR DU GRAPHIQUE -->
+    <div id="chart-container"></div>
+
+    <!-- PANNEAU DE TRADING -->
+    <div id="trading-panel" class="trading-panel">
+        <div class="trading-header">
+            <h3>🎯 Exécution d'Ordre</h3>
+            <span id="server-status" class="server-status offline">● Déconnecté</span>
+        </div>
+
+        <form id="trade-form" class="trade-form">
+            <!-- Symbol -->
+            <div class="form-group">
+                <label for="trade-symbol">Symbole</label>
+                <select id="trade-symbol" required>
+                    <option value="">Sélectionnez un symbole</option>
+                    <option value="XAUUSD" selected>XAU/USD (OR)</option>
+                    <option value="BTCUSDT">BTC/USDT</option>
+                    <option value="EURUSD">EUR/USD</option>
+                    <option value="GBPUSD">GBP/USD</option>
+                    <option value="USDJPY">USD/JPY</option>
+                </select>
+            </div>
+
+            <!-- Type d'Ordre (BUY/SELL) -->
+            <div class="form-group">
+                <label>Type d'Ordre</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="order-type" value="buy" checked required />
+                        <span class="radio-buy">🔼 BUY</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="order-type" value="sell" required />
+                        <span class="radio-sell">🔽 SELL</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Volume (Lots) -->
+            <div class="form-group">
+                <label for="trade-volume">Volume (Lots)</label>
+                <input type="number" id="trade-volume" min="0.01" step="0.01" value="0.01" required />
+            </div>
+
+            <!-- Entry Price (Informatif) -->
+            <div class="form-group">
+                <label for="entry-price">Prix d'Entrée (actuel)</label>
+                <input type="number" id="entry-price" step="0.00001" readonly placeholder="Auto" />
+            </div>
+
+            <!-- Take Profit -->
+            <div class="form-group">
+                <label for="trade-tp">Take Profit (Prix)</label>
+                <input type="number" id="trade-tp" step="0.00001" placeholder="Ex: 1.1050" />
+            </div>
+
+            <!-- Stop Loss -->
+            <div class="form-group">
+                <label for="trade-sl">Stop Loss (Prix)</label>
+                <input type="number" id="trade-sl" step="0.00001" placeholder="Ex: 1.0950" />
+            </div>
+
+            <!-- Risk/Reward Ratio -->
+            <div class="form-group">
+                <label for="risk-reward">Ratio R:R</label>
+                <input type="text" id="risk-reward" readonly placeholder="Calculé automatiquement" />
+            </div>
+
+            <!-- Boutons d'Action -->
+            <div class="trading-buttons">
+                <button type="submit" id="trade-submit" class="btn-trade">📤 Envoyer l'Ordre</button>
+                <button type="reset" id="trade-reset" class="btn-secondary">🔄 Réinitialiser</button>
+            </div>
+
+            <!-- Message de Status -->
+            <div id="order-status" class="order-status"></div>
+        </form>
+    </div>
+
+    <!-- MODAL D'AUTHENTIFICATION -->
+    <div id="auth-modal" class="auth-modal">
+        <div class="auth-modal-overlay"></div>
+        <div class="auth-modal-content">
+            <div class="auth-modal-header">
+                <h2>Pro Analyst Terminal</h2>
+                <button id="auth-modal-close" class="auth-modal-close">✕</button>
+            </div>
+
+            <!-- TABS -->
+            <div class="auth-tabs">
+                <button class="auth-tab-btn active" data-tab="login">Connexion</button>
+                <button class="auth-tab-btn" data-tab="signup">Inscription</button>
+            </div>
+
+            <!-- TAB: CONNEXION -->
+            <div id="auth-tab-login" class="auth-tab-pane active">
+                <form id="login-form" class="auth-form">
+                    <div class="form-group">
+                        <label for="login-email">Email</label>
+                        <input 
+                            type="email" 
+                            id="login-email" 
+                            placeholder="votre.email@exemple.com" 
+                            required 
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="login-password">Mot de passe</label>
+                        <input 
+                            type="password" 
+                            id="login-password" 
+                            placeholder="••••••••" 
+                            required 
+                        />
+                    </div>
+
+                    <button type="submit" class="btn-primary full-width">
+                        🔐 Connexion
+                    </button>
+
+                    <div id="login-error" class="auth-error"></div>
+                    <div id="login-loading" class="auth-loading"></div>
+                </form>
+            </div>
+
+            <!-- TAB: INSCRIPTION -->
+            <div id="auth-tab-signup" class="auth-tab-pane">
+                <form id="signup-form" class="auth-form">
+                    <div class="form-group">
+                        <label for="signup-email">Email</label>
+                        <input 
+                            type="email" 
+                            id="signup-email" 
+                            placeholder="votre.email@exemple.com" 
+                            required 
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="signup-username">Nom d'utilisateur (optionnel)</label>
+                        <input 
+                            type="text" 
+                            id="signup-username" 
+                            placeholder="votre_pseudo" 
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="signup-password">Mot de passe (min 8 caractères)</label>
+                        <input 
+                            type="password" 
+                            id="signup-password" 
+                            placeholder="••••••••" 
+                            minlength="8"
+                            required 
+                        />
+                    </div>
+
+                    <div class="form-group">
+                        <label for="signup-password-confirm">Confirmer le mot de passe</label>
+                        <input 
+                            type="password" 
+                            id="signup-password-confirm" 
+                            placeholder="••••••••" 
+                            minlength="8"
+                            required 
+                        />
+                    </div>
+
+                    <button type="submit" class="btn-primary full-width">
+                        ✓ Créer un compte
+                    </button>
+
+                    <div id="signup-error" class="auth-error"></div>
+                    <div id="signup-loading" class="auth-loading"></div>
+                </form>
+            </div>
+
+            <!-- SECTION BROKER CONFIG (BRIDGE PYTHON) -->
+            <div id="auth-broker-section" class="auth-broker-section hidden">
+                <div class="auth-section-divider">
+                    <span>Configuration du Bridge Python</span>
+                </div>
+
+                <form id="broker-config-form" class="auth-form">
+                    <div class="form-group">
+                        <label for="bridge-url">URL du Bridge (localhost:5000)</label>
+                        <input 
+                            type="url" 
+                            id="bridge-url" 
+                            placeholder="http://localhost:5000"
+                            value="http://localhost:5000"
+                            readonly
+                        />
+                    </div>
+
+                    <div class="form-group" style="background: #f0f0f0; padding: 10px; border-radius: 4px;">
+                        <p style="margin: 0; font-size: 12px; color: #666;">
+                            <strong>ℹ️ Info:</strong> Le bridge Python doit être lancé séparément sur le port 5000.
+                            Les ordres seront exécutées via ce bridge local.
+                        </p>
+                    </div>
+
+                    <button type="submit" class="btn-secondary full-width" disabled>
+                        ✓ Configuration automatique
+                    </button>
+
+                    <div id="broker-error" class="auth-error"></div>
+                    <div id="broker-success" class="auth-success"></div>
+                </form>
+            </div>
+
+            <!-- FOOTER UTILISATEUR CONNECTÉ -->
+            <div id="auth-user-section" class="auth-user-section hidden">
+                <div class="auth-user-info">
+                    <p>Connecté en tant que <strong id="auth-user-email"></strong></p>
+                    
+                    <!-- STATUT BROKER / BRIDGE -->
+                    <div id="broker-status-badge" class="broker-status-badge">
+                        <div class="broker-status-header">
+                            <span id="broker-status-indicator" class="broker-status-indicator offline">
+                                ● Serveur: Déconnecté
+                            </span>
+                            <span id="bridge-status-indicator" class="broker-status-indicator offline" style="margin-left: 15px;">
+                                ● Bridge: Déconnecté
+                            </span>
+                        </div>
+                        <div id="broker-details-section" class="broker-details-section hidden">
+                            <div class="broker-details">
+                                <p><strong>📱 Serveur Node.js:</strong> <span id="server-port">localhost:3000</span></p>
+                                <p><strong>🐍 Bridge Python:</strong> <span id="bridge-port">localhost:5000</span></p>
+                                <p><strong>⚡ Statut Ordres:</strong> <span id="broker-connection-status" class="status-badge offline">Attente du bridge</span></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- PRÉFÉRENCES -->
+                <div class="auth-preferences">
+                    <label class="checkbox-label">
+                        <input 
+                            type="checkbox" 
+                            id="pref-economic-news" 
+                            checked 
+                        />
+                        <span>Notifications des news économiques</span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input 
+                            type="checkbox" 
+                            id="pref-explanations" 
+                            checked 
+                        />
+                        <span>Afficher les explications des news</span>
+                    </label>
+
+                    <label>
+                        <span>Thème</span>
+                        <select id="pref-theme">
+                            <option value="dark">Sombre</option>
+                            <option value="light">Clair</option>
+                        </select>
+                    </label>
+                </div>
+
+                <button id="logout-btn" class="btn-danger full-width">
+                    🚪 Déconnexion
+                </button>
+            </div>
         </div>
     </div>
 
-    <div id="chart-container"></div>
+    <!-- OVERLAY DE PROPRIÉTÉS -->
+    <div id="drawing-settings-overlay" class="drawing-overlay">
+        <div class="overlay-modal">
+            <div class="overlay-header">
+                <h3>Propriétés de l'objet</h3>
+                <button id="overlay-close" class="overlay-close-btn">✕</button>
+            </div>
+
+            <div class="overlay-tabs">
+                <button class="overlay-tab-btn active" data-tab="style">Style</button>
+                <button class="overlay-tab-btn" data-tab="text">Texte</button>
+                <button class="overlay-tab-btn" data-tab="coords">Coordonnées</button>
+            </div>
+
+            <!-- TAB: STYLE -->
+            <div id="tab-style" class="overlay-tab-pane active">
+                <div class="form-group">
+                    <label>Couleur de l'objet</label>
+                    <input type="color" id="obj-color-input" value="#2962ff" />
+                </div>
+            </div>
+
+            <!-- TAB: TEXTE -->
+            <div id="tab-text" class="overlay-tab-pane">
+                <div class="form-group">
+                    <label>Texte</label>
+                    <input type="text" id="rect-text-content" placeholder="Entrez le texte..." />
+                </div>
+                <div class="form-group">
+                    <label>Couleur du texte</label>
+                    <input type="color" id="text-color-input" value="#ffffff" />
+                </div>
+                <div class="form-group">
+                    <label>Taille du texte</label>
+                    <input type="number" id="text-size-input" min="8" max="32" value="12" />
+                </div>
+                <div class="form-group">
+                    <label>Position du texte</label>
+                    <select id="text-pos-select">
+                        <option value="top">En haut</option>
+                        <option value="middle">Au milieu</option>
+                        <option value="bottom">En bas</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- TAB: COORDONNÉES -->
+            <div id="tab-coords" class="overlay-tab-pane">
+                <div class="form-group">
+                    <label>Prix 1</label>
+                    <input type="number" id="coord-p1" step="0.01" placeholder="Prix..." />
+                </div>
+                <div class="form-group">
+                    <label>Prix 2</label>
+                    <input type="number" id="coord-p2" step="0.01" placeholder="Prix..." />
+                </div>
+            </div>
+
+            <div class="overlay-footer">
+                <button id="overlay-delete" class="btn-danger">🗑️ Supprimer</button>
+                <button id="overlay-save" class="btn-primary">✓ Appliquer</button>
+            </div>
+        </div>
+    </div>
 
     <script type="module" src="/src/main.ts"></script>
+    <script src="/test.js" defer></script>
 </body>
 </html>
