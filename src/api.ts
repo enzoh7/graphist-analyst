@@ -1,18 +1,15 @@
 import type { Candle } from './types';
 
-// ========== MAPPING DES SYMBOLES ==========
+// ========== MAPPING DES SYMBOLES MT5 ==========
 const SYMBOL_MAPPING: Record<string, string> = {
-    'XAUUSD': 'PAXGUSDT',
-    'BTCUSDT': 'BTCUSDT',
-    'EURUSD': 'EURUSDT',
-    'GBPUSD': 'GBPUSDT',
-    'USDJPY': 'JPYUSDT',
+    'XAUUSD': 'XAUUSD',
+    'BTCUSDT': 'BTCUSD',
+    'EURUSD': 'EURUSD',
+    'GBPUSD': 'GBPUSD',
+    'USDJPY': 'USDJPY',
 };
 
-/**
- * Convertir un symbole affiché à l'utilisateur en symbole Binance
- */
-export function getBinanceSymbol(displayedSymbol: string): string {
+export function getMT5Symbol(displayedSymbol: string): string {
     return SYMBOL_MAPPING[displayedSymbol] || displayedSymbol;
 }
 
@@ -21,8 +18,8 @@ export interface TradeOrder {
     symbol: string;
     type: 'buy' | 'sell';
     volume: number;
-    tp: number;  // Take Profit
-    sl: number;  // Stop Loss
+    tp: number;
+    sl: number;
 }
 
 export interface TradeResponse {
@@ -36,155 +33,127 @@ export interface TradeResponse {
     timestamp: string;
 }
 
-export interface HealthResponse {
-    status: string;
-    serverPort: number;
-    bridgeUrl: string;
-    bridgeConnected: boolean;
-}
-
 export class TradingApiClient {
     private baseUrl: string;
-
     constructor(baseUrl: string = 'http://localhost:3000') {
         this.baseUrl = baseUrl;
     }
 
-    /**
-     * Vérifier la connexion au serveur et au bridge
-     */
-    async checkHealth(): Promise<HealthResponse | null> {
+    async checkHealth() {
         try {
             const response = await fetch(`${this.baseUrl}/health`);
-            if (!response.ok) return null;
-            return await response.json();
-        } catch (error) {
-            console.error('❌ Serveur indisponible:', error);
-            return null;
-        }
+            return response.ok ? await response.json() : null;
+        } catch { return null; }
     }
 
-    /**
-     * Exécuter une ordre (BUY ou SELL) - Route unifiée /trade
-     */
     async executeOrder(order: TradeOrder): Promise<TradeResponse> {
-        try {
-            const response = await fetch(`${this.baseUrl}/trade`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(order),
-            });
-
-            if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || error.message || 'Erreur lors de l\'exécution de l\'ordre');
-            }
-
-            const result: TradeResponse = await response.json();
-            console.log('✅ Ordre exécutée avec succès:', result.orderId);
-            return result;
-        } catch (error) {
-            console.error('❌ Erreur lors de l\'exécution de l\'ordre:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Récupérer les positions ouvertes
-     */
-    async getPositions() {
-        try {
-            const response = await fetch(`${this.baseUrl}/positions`);
-            if (!response.ok) throw new Error('Impossible de récupérer les positions');
-            return await response.json();
-        } catch (error) {
-            console.error('❌ Erreur positions:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * BUY - Raccourci pratique
-     */
-    async buy(symbol: string, volume: number, tp: number, sl: number): Promise<TradeResponse> {
-        return this.executeOrder({ symbol, type: 'buy', volume, tp, sl });
-    }
-
-    /**
-     * SELL - Raccourci pratique
-     */
-    async sell(symbol: string, volume: number, tp: number, sl: number): Promise<TradeResponse> {
-        return this.executeOrder({ symbol, type: 'sell', volume, tp, sl });
+        const response = await fetch(`${this.baseUrl}/trade`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...order, symbol: getMT5Symbol(order.symbol) }),
+        });
+        if (!response.ok) throw new Error('Erreur exécution');
+        return await response.json();
     }
 }
 
-// ========== DONNÉES DE MARCHÉ ==========
+// ========== DONNÉES DE MARCHÉ MT5 HAUTE FRÉQUENCE ==========
 export class MarketDataService {
-    private socket: WebSocket | null = null;
+    private pollInterval: any = null;
     private onTick: (candle: Candle) => void;
     private symbol: string;
     private interval: string;
+    private serverUrl: string;
+    
+    // État de la bougie en cours pour le calcul OHLC
+    private currentCandle: Candle | null = null;
 
-    constructor(symbol: string, interval: string, callback: (candle: Candle) => void) {
-        this.symbol = getBinanceSymbol(symbol);  // Convertir au symbole Binance
-        this.interval = interval;
+    constructor(symbol: string, interval: string, callback: (candle: Candle) => void, serverUrl: string = 'http://localhost:3000') {
+        this.symbol = getMT5Symbol(symbol);
+        this.interval = this.convertInterval(interval);
         this.onTick = callback;
+        this.serverUrl = serverUrl;
     }
 
-    private get historyUrl() {
-        return `https://api.binance.com/api/v3/klines?symbol=${this.symbol.toUpperCase()}&interval=${this.interval}&limit=500`;
+    /**
+     * Convertit les labels HTML en durées utilisables (en secondes)
+     */
+    private convertInterval(tf: string): string {
+        const map: Record<string, string> = {
+            '1m': '1m', '5m': '5m', '30m': '30m', 
+            '1h': '1h', '4h': '4h', '4H': '4h', 
+            '1d': '1d', 'D1': '1d', 'Weekly': '1w'
+        };
+        return map[tf] || '1m';
+    }
+
+    /**
+     * Calcule le début exact de la bougie pour regrouper les ticks
+     */
+    private getTimestampForTimeframe(unixSeconds: number): number {
+        const unit = this.interval.slice(-1);
+        const val = parseInt(this.interval) || 1;
+        let seconds = 60;
+
+        if (unit === 'm') seconds = val * 60;
+        else if (unit === 'h') seconds = val * 3600;
+        else if (unit === 'd') seconds = 86400;
+        else if (unit === 'w') seconds = 604800;
+
+        return Math.floor(unixSeconds / seconds) * seconds;
     }
 
     public async getHistory(): Promise<Candle[]> {
         try {
-            const response = await fetch(this.historyUrl);
+            const response = await fetch(`${this.serverUrl}/history/${this.symbol}?limit=500&timeframe=${this.interval}`);
+            if (!response.ok) return [];
             const data = await response.json();
-            return data.map((d: any) => ({
-                time: Math.floor(d[0] / 1000),
-                open: parseFloat(d[1]),
-                high: parseFloat(d[2]),
-                low: parseFloat(d[3]),
-                close: parseFloat(d[4]),
-                volume: parseFloat(d[5]),
-            }));
-        } catch (e) {
-            console.error('Erreur getHistory:', e);
+            if (data.candles && data.candles.length > 0) {
+                const last = data.candles[data.candles.length - 1];
+                this.currentCandle = { ...last };
+                return data.candles;
+            }
             return [];
-        }
+        } catch { return []; }
     }
 
     public connect() {
-        this.socket = new WebSocket(
-            `wss://stream.binance.com:9443/ws/${this.symbol.toLowerCase()}@kline_${this.interval}`
-        );
-        this.socket.onmessage = (event) => {
+        // Fréquence augmentée à 300ms pour un mouvement "constant"
+        const fetchPrice = async () => {
             try {
-                const data = JSON.parse(event.data);
-                const k = data.k;
-                const candle: Candle = {
-                    time: Math.floor(k.t / 1000),
-                    open: parseFloat(k.o),
-                    high: parseFloat(k.h),
-                    low: parseFloat(k.l),
-                    close: parseFloat(k.c),
-                    volume: parseFloat(k.v),
-                };
-                this.onTick(candle);
-            } catch (e) {
-                console.error('Erreur parsing WebSocket:', e);
-            }
+                const response = await fetch(`${this.serverUrl}/price/${this.symbol}`);
+                if (!response.ok) return;
+                const data = await response.json();
+
+                const now = Math.floor(Date.now() / 1000);
+                const candleStart = this.getTimestampForTimeframe(now);
+
+                if (!this.currentCandle || candleStart > (this.currentCandle.time as number)) {
+                    // Nouvelle bougie : on initialise avec le prix actuel
+                    this.currentCandle = {
+                        time: candleStart as any,
+                        open: data.ask,
+                        high: data.ask,
+                        low: data.ask,
+                        close: data.ask,
+                        volume: 0
+                    };
+                } else {
+                    // Mise à jour de la bougie en cours (Tick)
+                    this.currentCandle.high = Math.max(this.currentCandle.high, data.ask);
+                    this.currentCandle.low = Math.min(this.currentCandle.low, data.ask);
+                    this.currentCandle.close = data.ask;
+                }
+
+                this.onTick({ ...this.currentCandle });
+            } catch (e) { console.error("Erreur Tick:", e); }
         };
-        this.socket.onerror = (err) => {
-            console.error('WebSocket erreur:', err);
-        };
+
+        fetchPrice();
+        this.pollInterval = setInterval(fetchPrice, 300); // Mise à jour ultra-rapide
     }
 
     public disconnect() {
-        if (this.socket) {
-            this.socket.close();
-            this.socket = null;
-        }
+        if (this.pollInterval) clearInterval(this.pollInterval);
     }
 }

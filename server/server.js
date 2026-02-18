@@ -79,9 +79,9 @@ app.post('/trade', async (req, res) => {
         const { symbol, type, volume, sl, tp } = req.body;
 
         // ========== VALIDATION ==========
-        if (!symbol || !type || !volume || !sl || !tp) {
+        if (!symbol || !type || !volume) {
             return res.status(400).json({
-                error: 'Paramètres manquants. Requis: symbol, type, volume, sl, tp'
+                error: 'Paramètres manquants. Requis: symbol, type, volume'
             });
         }
 
@@ -107,8 +107,8 @@ app.post('/trade', async (req, res) => {
                 symbol,
                 type,
                 volume: parseFloat(volume),
-                sl: parseFloat(sl),
-                tp: parseFloat(tp)
+                sl: sl ? parseFloat(sl) : 0,
+                tp: tp ? parseFloat(tp) : 0
             })
         });
 
@@ -131,8 +131,8 @@ app.post('/trade', async (req, res) => {
             symbol,
             type,
             volume,
-            sl,
-            tp,
+            sl: sl ? parseFloat(sl) : 0,
+            tp: tp ? parseFloat(tp) : 0,
             timestamp: new Date().toISOString()
         });
 
@@ -144,6 +144,117 @@ app.post('/trade', async (req, res) => {
             details: 'Assurez-vous que le Bridge Python (port 5000) est lancé'
         });
     }
+});
+
+/**
+ * GET /symbols - Lister les symboles disponibles sur MT5
+ */
+app.get('/symbols', async (req, res) => {
+  try {
+    if (!bridgeConnected) {
+      return res.status(503).json({
+        status: 'error',
+        message: 'Bridge MT5 non disponible'
+      });
+    }
+
+    const response = await fetch(`${BRIDGE_URL}/symbols`, {
+      method: 'GET',
+      timeout: 5000
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return res.status(response.status).json(error);
+    }
+
+    const data = await response.json();
+    res.json(data);
+
+  } catch (error) {
+    console.error('❌ Erreur listing symboles:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Erreur lors de la récupération des symboles'
+    });
+  }
+});
+
+/**
+ * GET /price/:symbol - Récupérer le prix actuel de MT5
+ */
+app.get('/price/:symbol', async (req, res) => {
+  try {
+    if (!bridgeConnected) {
+      return res.status(503).json({
+        status: 'error',
+        message: 'Bridge MT5 non disponible'
+      });
+    }
+
+    const { symbol } = req.params;
+
+    const response = await fetch(`${BRIDGE_URL}/price/${symbol}`, {
+      method: 'GET',
+      timeout: 5000
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return res.status(response.status).json(error);
+    }
+
+    const data = await response.json();
+    res.json(data);
+
+  } catch (error) {
+    console.error(`❌ Erreur récupération prix ${req.params.symbol}:`, error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Erreur lors de la récupération du prix'
+    });
+  }
+});
+
+/**
+ * GET /history/:symbol - Récupérer l'historique des prix de MT5
+ */
+app.get('/history/:symbol', async (req, res) => {
+  try {
+    if (!bridgeConnected) {
+      return res.status(503).json({
+        status: 'error',
+        message: 'Bridge MT5 non disponible'
+      });
+    }
+
+    const { symbol } = req.params;
+    const { limit = 500, timeframe = '1h' } = req.query;
+
+    const url = new URL(`${BRIDGE_URL}/history/${symbol}`);
+    url.searchParams.set('limit', limit);
+    url.searchParams.set('timeframe', timeframe);
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      timeout: 5000
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      return res.status(response.status).json(error);
+    }
+
+    const data = await response.json();
+    res.json(data);
+
+  } catch (error) {
+    console.error(`❌ Erreur récupération historique ${req.params.symbol}:`, error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Erreur lors de la récupération de l\'historique'
+    });
+  }
 });
 
 /**

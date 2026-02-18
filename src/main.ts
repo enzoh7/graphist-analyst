@@ -46,6 +46,8 @@ class TradingPanel {
     private orderStatusEl: HTMLElement | null;
     private tradingPlatform: TradingPlatform | null = null;
     public activePositions: ActivePosition[] = [];
+    private currentPrice: number = 0;
+    private priceLastUpdateTime: number = 0;
 
     constructor(tradingPlatform?: TradingPlatform) {
         this.tradingClient = new TradingApiClient();
@@ -70,6 +72,12 @@ class TradingPanel {
         const tpInput = document.getElementById('trade-tp') as HTMLInputElement;
         const slInput = document.getElementById('trade-sl') as HTMLInputElement;
         const entryInput = document.getElementById('entry-price') as HTMLInputElement;
+        const volumeInput = document.getElementById('trade-volume') as HTMLInputElement;
+
+        // Initialiser trade-volume avec 0.01 par défaut
+        if (volumeInput && !volumeInput.value) {
+            volumeInput.value = '0.01';
+        }
 
         if (tpInput && slInput && entryInput) {
             tpInput.addEventListener('input', () => this.calculateRiskReward());
@@ -86,13 +94,20 @@ class TradingPanel {
                 const selectedSymbol = assetSelect.value;
                 symbolSelect.value = selectedSymbol;
                 console.log(`📊 Symbole synchronisé: ${selectedSymbol}`);
+                // Récupérer le prix immédiatement
                 this.updateCurrentPrice();
             });
         }
 
         if (symbolSelect) {
-            symbolSelect.addEventListener('change', () => this.updateCurrentPrice());
+            symbolSelect.addEventListener('change', () => {
+                // Récupérer le prix immédiatement
+                this.updateCurrentPrice();
+            });
         }
+        
+        // Afficher le prix initial quand le formulaire est chargé
+        setTimeout(() => this.updateCurrentPrice(), 100);
     }
 
     private async checkServerHealth() {
@@ -142,26 +157,63 @@ class TradingPanel {
     }
 
     private updateCurrentPrice() {
-        // Simuler la mise à jour du prix actuel
-        // Dans une vraie application, on récupérerait le prix du marché
+        // Récupérer le prix actuel du serveur
+        const symbol = (document.getElementById('trade-symbol') as HTMLSelectElement).value || 'XAUUSD';
+        
+        fetch(`http://localhost:3000/price/${symbol}`)
+            .then(r => r.json())
+            .then(data => {
+                console.log(`📊 Prix reçu pour ${symbol}: bid=${data.bid}, ask=${data.ask}`);
+                this.updateLivePrice(data.ask);
+            })
+            .catch(err => {
+                console.warn(`⚠️ Erreur récupération prix ${symbol}:`, err);
+            });
+    }
+
+    public updateLivePrice(ask: number) {
+        if (ask <= 0) return;
+        
+        this.currentPrice = ask;
+        this.priceLastUpdateTime = Date.now();
+        
         const entryInput = document.getElementById('entry-price') as HTMLInputElement;
-        if (entryInput && !entryInput.value) {
-            entryInput.value = (Math.random() * 100 + 1000).toFixed(5);
+        if (entryInput) {
+            entryInput.value = ask.toFixed(5);
+            
+            // Ajouter une petite animation/badge pour indiquer la mise à jour
+            entryInput.style.background = 'rgba(38, 166, 154, 0.3)'; // Highlight vert
+            setTimeout(() => {
+                entryInput.style.background = '';
+            }, 500);
         }
+        
+        // Recalculer R:R si TP/SL sont remplis
+        this.calculateRiskReward();
     }
 
     private async handleSubmit(e: Event) {
         e.preventDefault();
 
+        // ✅ VÉRIFICATION AUTHENTIFICATION
+        if (!AuthClient.isAuthenticated()) {
+            this.showStatus('❌ Vous devez être connecté pour trader!', 'error');
+            console.warn('⚠️ Tentative de trade sans authentification');
+            return;
+        }
+
         const symbol = (document.getElementById('trade-symbol') as HTMLSelectElement).value;
         const orderType = (document.querySelector('input[name="order-type"]:checked') as HTMLInputElement).value;
         const volume = parseFloat((document.getElementById('trade-volume') as HTMLInputElement).value);
-        const tp = parseFloat((document.getElementById('trade-tp') as HTMLInputElement).value);
-        const sl = parseFloat((document.getElementById('trade-sl') as HTMLInputElement).value);
+        const tpInput = (document.getElementById('trade-tp') as HTMLInputElement).value;
+        const slInput = (document.getElementById('trade-sl') as HTMLInputElement).value;
+        
+        const tp = tpInput ? parseFloat(tpInput) : null;
+        const sl = slInput ? parseFloat(slInput) : null;
 
         // Valider
-        if (!symbol || !volume || !tp || !sl) {
-            this.showStatus('❌ Tous les champs sont requis', 'error');
+        if (!symbol || !volume) {
+            this.showStatus('❌ Symbole et volume sont requis', 'error');
             return;
         }
 
@@ -169,8 +221,8 @@ class TradingPanel {
             symbol,
             type: orderType as 'buy' | 'sell',
             volume,
-            tp,
-            sl
+            tp: tp || 0,
+            sl: sl || 0
         };
 
         await this.executeOrder(order);
@@ -254,6 +306,56 @@ class TradingPlatform {
     private tradingPanel: TradingPanel | null = null;
     private selectedPosition: ActivePosition | null = null;
 
+    /**
+     * Obtenir les couleurs du thème depuis CSS
+     */
+    private getThemeColors() {
+        const style = getComputedStyle(document.body);
+        return {
+            chartBg: style.getPropertyValue('--chart-bg').trim() || '#131722',
+            chartText: style.getPropertyValue('--chart-text').trim() || '#d1d4dc',
+            chartGrid: style.getPropertyValue('--chart-grid').trim() || '#2a2e39',
+            chartUp: style.getPropertyValue('--chart-up').trim() || '#26a69a',
+            chartDown: style.getPropertyValue('--chart-down').trim() || '#ef5350',
+        };
+    }
+
+    /**
+     * Appliquer le thème au graphique
+     */
+    private applyThemeToChart() {
+        const colors = this.getThemeColors();
+        
+        this.chart.applyOptions({
+            layout: {
+                background: { color: colors.chartBg },
+                textColor: colors.chartText,
+                fontSize: 12,
+            },
+            grid: {
+                vertLines: { color: colors.chartGrid },
+                horzLines: { color: colors.chartGrid },
+            },
+            timeScale: {
+                timeVisible: true,
+                secondsVisible: false,
+                borderColor: colors.chartGrid,
+            },
+            rightPriceScale: {
+                borderColor: colors.chartGrid,
+            },
+        });
+
+        this.candlesSeries.applyOptions({
+            upColor: colors.chartUp,
+            downColor: colors.chartDown,
+            wickUpColor: colors.chartUp,
+            wickDownColor: colors.chartDown,
+        });
+
+        console.log(`🎨 Thème graphique appliqué`);
+    }
+
     constructor() {
         const container = document.getElementById('chart-container');
         if (!container) {
@@ -264,32 +366,34 @@ class TradingPlatform {
         const rect = container.getBoundingClientRect();
         console.log(`📊 Dimensions du conteneur: ${rect.width}x${rect.height}`);
 
+        const colors = this.getThemeColors();
+
         this.chart = createChart(container, {
             layout: {
-                background: { color: '#131722' },
-                textColor: '#d1d4dc',
+                background: { color: colors.chartBg },
+                textColor: colors.chartText,
                 fontSize: 12,
             },
             grid: {
-                vertLines: { color: '#2a2e39' },
-                horzLines: { color: '#2a2e39' },
+                vertLines: { color: colors.chartGrid },
+                horzLines: { color: colors.chartGrid },
             },
             timeScale: {
                 timeVisible: true,
                 secondsVisible: false,
-                borderColor: '#2a2e39',
+                borderColor: colors.chartGrid,
             },
             rightPriceScale: {
-                borderColor: '#2a2e39',
+                borderColor: colors.chartGrid,
             },
         });
 
         this.candlesSeries = this.chart.addSeries(CandlestickSeries, {
-            upColor: '#26a69a',
-            downColor: '#ef5350',
+            upColor: colors.chartUp,
+            downColor: colors.chartDown,
             borderVisible: false,
-            wickUpColor: '#26a69a',
-            wickDownColor: '#ef5350',
+            wickUpColor: colors.chartUp,
+            wickDownColor: colors.chartDown,
         });
 
         console.log('✅ Série de chandelier créée');
@@ -307,6 +411,17 @@ class TradingPlatform {
         console.log('✅ Interfaces utilisateur initialisées');
 
         this.loadMarketData('XAUUSD', '1m');
+
+        // Écouter les changements de thème
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
+                    this.applyThemeToChart();
+                }
+            });
+        });
+
+        observer.observe(document.body, { attributes: true, attributeFilter: ['data-theme'] });
 
         window.addEventListener('resize', () => {
             const chartContainer = document.getElementById('chart-container');
@@ -746,6 +861,17 @@ class TradingPlatform {
         }
         tpField.value = position.tp.toFixed(5);
 
+        // Ajouter bouton "Appliquer les modifications"
+        let applyBtn = overlay.querySelector('#position-apply-btn') as HTMLButtonElement;
+        if (!applyBtn) {
+            applyBtn = document.createElement('button');
+            applyBtn.id = 'position-apply-btn';
+            applyBtn.textContent = '💾 Appliquer les modifications';
+            applyBtn.style.cssText = 'background: #1e90ff; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; width: 100%;';
+            applyBtn.addEventListener('click', () => this.updatePositionLevels(position));
+            overlay.querySelector('.overlay-tab-pane')?.appendChild(applyBtn);
+        }
+
         // Ajouter bouton "Fermer la position"
         let closeBtn = overlay.querySelector('#position-close-btn') as HTMLButtonElement;
         if (!closeBtn) {
@@ -761,6 +887,32 @@ class TradingPlatform {
         if (textField) {
             textField.value = `${position.type.toUpperCase()} ${position.volume} lots @ ${position.entry.toFixed(5)}`;
         }
+    }
+
+    private updatePositionLevels(position: ActivePosition) {
+        const slField = document.getElementById('coord-p2') as HTMLInputElement;
+        const tpField = document.getElementById('position-tp-field') as HTMLInputElement;
+
+        const newSL = parseFloat(slField?.value || '0');
+        const newTP = parseFloat(tpField?.value || '0');
+
+        // Validation
+        if (!newSL || !newTP || newSL === position.sl && newTP === position.tp) {
+            this.showPositionMessage('⚠️ Veuillez modifier au moins SL ou TP', 'warning');
+            return;
+        }
+
+        // Mettre à jour la position
+        position.sl = newSL;
+        position.tp = newTP;
+
+        console.log(`📍 Position mise à jour: TP=${newTP.toFixed(5)}, SL=${newSL.toFixed(5)}`);
+        this.showPositionMessage(`✅ Position mise à jour! Ferme et rouvre pour voir les changements`);
+
+        // Fermer l'overlay après 2 secondes
+        setTimeout(() => {
+            this.closeOverlay();
+        }, 2000);
     }
 
     private closePosition(position: ActivePosition) {
@@ -782,11 +934,11 @@ class TradingPlatform {
         this.showPositionMessage(`✅ Position fermée!`);
     }
 
-    private showPositionMessage(message: string) {
+    private showPositionMessage(message: string, type: 'success' | 'warning' | 'error' = 'success') {
         const orderStatusEl = document.getElementById('order-status');
         if (orderStatusEl) {
             orderStatusEl.textContent = message;
-            orderStatusEl.className = 'order-status success';
+            orderStatusEl.className = `order-status ${type}`;
             setTimeout(() => {
                 orderStatusEl.textContent = '';
                 orderStatusEl.className = 'order-status';
@@ -936,6 +1088,10 @@ class TradingPlatform {
 
         this.marketService = new MarketDataService(symbol, interval, (candle: Candle) => {
             this.candlesSeries.update(candle as any);
+            // Afficher le prix en temps réel immédiatement
+            if (this.tradingPanel) {
+                this.tradingPanel.updateLivePrice(candle.close);
+            }
         });
 
         try {
@@ -1113,11 +1269,16 @@ function setupTradingButtons() {
             orderTypeInput.checked = true;
         }
         
-        // Afficher le formulaire
+        // Afficher le formulaire et le panel
         tradeForm.style.display = 'block';
+        tradingPanel.style.display = 'block';
         tradingPanel.style.height = 'auto';
         tradingPanel.style.maxHeight = '80vh';
         tradingPanel.style.overflow = 'auto';
+        
+        // Afficher le statut du serveur
+        const serverStatus = document.getElementById('server-status');
+        if (serverStatus) serverStatus.style.display = 'block';
         
         console.log('🔼 Mode BUY activé');
     });
@@ -1129,11 +1290,16 @@ function setupTradingButtons() {
             orderTypeInput.checked = true;
         }
         
-        // Afficher le formulaire
+        // Afficher le formulaire et le panel
         tradeForm.style.display = 'block';
+        tradingPanel.style.display = 'block';
         tradingPanel.style.height = 'auto';
         tradingPanel.style.maxHeight = '80vh';
         tradingPanel.style.overflow = 'auto';
+        
+        // Afficher le statut du serveur
+        const serverStatus = document.getElementById('server-status');
+        if (serverStatus) serverStatus.style.display = 'block';
         
         console.log('🔽 Mode SELL activé');
     });
@@ -1141,27 +1307,31 @@ function setupTradingButtons() {
     // Au clic sur CONFIG (⚙️) - Toggle
     btnConfig.addEventListener('click', () => {
         const isHidden = tradeForm.style.display === 'none' || tradeForm.style.display === '';
+        const serverStatus = document.getElementById('server-status');
         
         if (isHidden) {
             // Afficher
             tradeForm.style.display = 'block';
+            tradingPanel.style.display = 'block';
             tradingPanel.style.height = 'auto';
             tradingPanel.style.maxHeight = '80vh';
             tradingPanel.style.overflow = 'auto';
+            if (serverStatus) serverStatus.style.display = 'block';
             console.log('⚙️ Formulaire d\'ordre ouvert');
         } else {
             // Masquer
             tradeForm.style.display = 'none';
-            tradingPanel.style.height = '100px';
-            tradingPanel.style.maxHeight = '100px';
+            tradingPanel.style.display = 'none';
+            if (serverStatus) serverStatus.style.display = 'none';
             console.log('⚙️ Formulaire d\'ordre fermé');
         }
     });
 
-    // Masquer le formulaire au démarrage
+    // Masquer le formulaire et le panel au démarrage
     tradeForm.style.display = 'none';
-    tradingPanel.style.height = '100px';
-    tradingPanel.style.maxHeight = '100px';
+    tradingPanel.style.display = 'none';
+    const serverStatus = document.getElementById('server-status');
+    if (serverStatus) serverStatus.style.display = 'none';
 }
 
 // ========== INITIALISATION ==========

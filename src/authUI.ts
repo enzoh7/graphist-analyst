@@ -178,6 +178,7 @@ class AuthUI {
     // ========== SUCCÈS ==========
     console.log('✅ Connexion réussie:', result.user);
     this.updateAuthUIState();
+    this.closeAuthModal(); // Fermer le modal après connexion
     (document.getElementById('login-form') as HTMLFormElement).reset();
   }
 
@@ -229,6 +230,7 @@ class AuthUI {
     // ========== SUCCÈS ==========
     console.log('✅ Inscription réussie:', result.user);
     this.updateAuthUIState();
+    this.closeAuthModal(); // Fermer le modal après inscription
     (document.getElementById('signup-form') as HTMLFormElement).reset();
     this.switchAuthTab('login');
   }
@@ -252,6 +254,18 @@ class AuthUI {
   }
 
   /**
+   * Appliquer le thème au DOM
+   */
+  applyTheme(theme: 'dark' | 'light') {
+    if (theme === 'light') {
+      document.body.setAttribute('data-theme', 'light');
+    } else {
+      document.body.removeAttribute('data-theme');
+    }
+    console.log(`🎨 Thème appliqué: ${theme}`);
+  }
+
+  /**
    * Mettre à jour les préférences
    */
   async updatePreferences() {
@@ -266,6 +280,9 @@ class AuthUI {
       allowEconomicExplanations: explanations,
       theme: theme as 'dark' | 'light'
     };
+
+    // Appliquer le thème immédiatement
+    this.applyTheme(theme as 'dark' | 'light');
 
     const result = await AuthClient.updatePreferences(preferences);
 
@@ -342,6 +359,9 @@ class AuthUI {
         if (economicNews) economicNews.checked = user.preferences.notifyEconomicNews;
         if (explanations) explanations.checked = user.preferences.allowEconomicExplanations;
         if (theme) theme.value = user.preferences.theme;
+
+        // Appliquer le thème sauvegardé
+        this.applyTheme(user.preferences.theme);
       }
     } else {
       // ========== UTILISATEUR NON CONNECTÉ ==========

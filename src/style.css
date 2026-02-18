@@ -4,6 +4,26 @@
   --border-color: #2a2e39;
   --text-color: #d1d4dc;
   --active-blue: #2962ff;
+  /* Couleurs graphique (sombre) */
+  --chart-bg: #131722;
+  --chart-text: #d1d4dc;
+  --chart-grid: #2a2e39;
+  --chart-up: #26a69a;
+  --chart-down: #ef5350;
+}
+
+body[data-theme="light"] {
+  --bg-color: #f0f2f5;
+  --header-bg: #f5f5f5;
+  --border-color: #e0e0e0;
+  --text-color: #333333;
+  --active-blue: #1a73e8;
+  /* Couleurs graphique (clair) */
+  --chart-bg: #f8f9fa;
+  --chart-text: #333333;
+  --chart-grid: #e0e0e0;
+  --chart-up: #26a69a;
+  --chart-down: #ef5350;
 }
 
 * {
@@ -352,7 +372,13 @@ body {
   padding: 8px 10px;
   border-radius: 4px;
   font-size: 13px;
-  transition: border 0.2s;
+  transition: border 0.2s, background 0.3s ease-out;
+}
+
+/* Animation de mise à jour du prix en temps réel */
+#entry-price {
+  font-weight: bold;
+  color: #26a69a; /* Vert pour les prix montants */
 }
 
 .form-group input[type="text"]:focus,
@@ -361,6 +387,11 @@ body {
   outline: none;
   border-color: var(--active-blue);
   background: rgba(41, 98, 255, 0.1);
+}
+
+#entry-price:focus {
+  border-color: #26a69a;
+  background: rgba(38, 166, 154, 0.1);
 }
 
 .form-group input[type="color"] {
