@@ -255,11 +255,9 @@ router.put('/preferences', authenticateToken, async (req, res) => {
   }
 });
 
-// ========== ROUTE: Configurer le broker ==========
+// ========== ROUTE: Configurer le broker (MT5 via Bridge) ==========
 router.post('/broker-config', authenticateToken, async (req, res) => {
   try {
-    const { metaApiToken, accountId } = req.body;
-
     const user = usersDB.get(req.user.id);
 
     if (!user) {
@@ -268,32 +266,18 @@ router.post('/broker-config', authenticateToken, async (req, res) => {
       });
     }
 
-    // Validation du token
-    if (!metaApiToken || metaApiToken.trim().length < 10) {
-      return res.status(400).json({
-        error: 'Token MetaApi invalide (min 10 caractères)'
-      });
-    }
-
-    if (!accountId || accountId.trim().length < 5) {
-      return res.status(400).json({
-        error: 'ID du compte invalide'
-      });
-    }
-
-    user.brokerToken = metaApiToken;
-    user.brokerAccountId = accountId;
     user.brokerConfigured = true;
     user.brokerConnected = true;
     user.brokerConnectedAt = new Date().toISOString();
+    user.brokerName = 'MT5 (Direct)';
 
-    console.log(`✅ Broker configuré pour ${user.email} - Account: ${accountId}`);
+    console.log(`✅ Broker MT5 configuré pour ${user.email}`);
 
     res.json({
       success: true,
       brokerConfigured: user.brokerConfigured,
       brokerConnected: user.brokerConnected,
-      brokerAccountId: user.brokerAccountId
+      brokerName: user.brokerName
     });
 
   } catch (error) {
@@ -316,8 +300,7 @@ router.get('/broker-status', authenticateToken, (req, res) => {
     res.json({
       brokerConfigured: user.brokerConfigured || false,
       brokerConnected: user.brokerConnected || false,
-      brokerAccountId: user.brokerAccountId || null,
-      brokerName: 'MexAtlantic-Real',
+      brokerName: 'MT5 (Direct)',
       brokerConnectedAt: user.brokerConnectedAt || null
     });
 

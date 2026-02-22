@@ -4,6 +4,7 @@ import type { IChartApi, ISeriesApi } from 'lightweight-charts';
 import type { Candle } from './types';
 import { MarketDataService, TradingApiClient, type TradeOrder } from './api';
 import './authUI'; // Initialiser l'authentification
+import './newsManager'; // Initialiser le gestionnaire de news
 import DrawingApiClient from './drawingApiClient'; // Charger/sauvegarder les dessins
 import AuthClient from './authClient'; // Vérifier l'état d'authentification
 
@@ -44,16 +45,19 @@ class TradingPanel {
     private form: HTMLFormElement;
     private serverStatus: HTMLElement | null;
     private orderStatusEl: HTMLElement | null;
+    private marketStatusEl: HTMLElement | null; // 🔴 Détecteur marché
     private tradingPlatform: TradingPlatform | null = null;
     public activePositions: ActivePosition[] = [];
     private currentPrice: number = 0;
     private priceLastUpdateTime: number = 0;
+    private inactivityTimeout: any = null; // 🔴 Chrono d'inactivité
 
     constructor(tradingPlatform?: TradingPlatform) {
         this.tradingClient = new TradingApiClient();
         this.form = document.getElementById('trade-form') as HTMLFormElement;
         this.serverStatus = document.getElementById('server-status');
         this.orderStatusEl = document.getElementById('order-status');
+        this.marketStatusEl = document.getElementById('market-status');
         this.tradingPlatform = tradingPlatform || null;
 
         if (!this.form) {
@@ -94,19 +98,16 @@ class TradingPanel {
                 const selectedSymbol = assetSelect.value;
                 symbolSelect.value = selectedSymbol;
                 console.log(`📊 Symbole synchronisé: ${selectedSymbol}`);
-                // Récupérer le prix immédiatement
                 this.updateCurrentPrice();
             });
         }
 
         if (symbolSelect) {
             symbolSelect.addEventListener('change', () => {
-                // Récupérer le prix immédiatement
                 this.updateCurrentPrice();
             });
         }
         
-        // Afficher le prix initial quand le formulaire est chargé
         setTimeout(() => this.updateCurrentPrice(), 100);
     }
 
@@ -156,21 +157,29 @@ class TradingPanel {
         }
     }
 
-    private updateCurrentPrice() {
-        // Récupérer le prix actuel du serveur
+    // 🔴 MODIFIÉ : On ne met plus N/A si ça plante (pour garder le prix du weekend)
+    public updateCurrentPrice() {
         const symbol = (document.getElementById('trade-symbol') as HTMLSelectElement).value || 'XAUUSD';
         
         fetch(`http://localhost:3000/price/${symbol}`)
             .then(r => r.json())
             .then(data => {
+                if (data.error || data.ask === undefined) {
+                    console.warn(`⚠️ Prix direct indisponible pour ${symbol} (Probablement fermé)`);
+                    this.setMarketInactive();
+                    return; 
+                }
+                
                 console.log(`📊 Prix reçu pour ${symbol}: bid=${data.bid}, ask=${data.ask}`);
                 this.updateLivePrice(data.ask);
             })
             .catch(err => {
-                console.warn(`⚠️ Erreur récupération prix ${symbol}:`, err);
+                console.warn(`⚠️ Erreur réseau prix ${symbol}:`, err);
+                this.setMarketInactive();
             });
     }
 
+    // 🔴 MODIFIÉ : Réinitialisation du chronomètre d'inactivité
     public updateLivePrice(ask: number) {
         if (ask <= 0) return;
         
@@ -181,21 +190,39 @@ class TradingPanel {
         if (entryInput) {
             entryInput.value = ask.toFixed(5);
             
-            // Ajouter une petite animation/badge pour indiquer la mise à jour
-            entryInput.style.background = 'rgba(38, 166, 154, 0.3)'; // Highlight vert
+            entryInput.style.background = 'rgba(38, 166, 154, 0.3)';
             setTimeout(() => {
                 entryInput.style.background = '';
             }, 500);
         }
         
-        // Recalculer R:R si TP/SL sont remplis
         this.calculateRiskReward();
+
+        // Si on reçoit un prix, on cache l'étiquette "Marché inactif"
+        if (this.marketStatusEl) {
+            this.marketStatusEl.style.display = 'none';
+        }
+
+        if (this.inactivityTimeout) {
+            clearTimeout(this.inactivityTimeout);
+        }
+
+        // Si aucun tick n'arrive dans les 5 secondes (ex: Weekend), on affiche l'étiquette
+        this.inactivityTimeout = setTimeout(() => {
+            this.setMarketInactive();
+        }, 5000);
+    }
+
+    // 🔴 NOUVEAU : Fonction pour afficher que le marché dort
+    public setMarketInactive() {
+        if (this.marketStatusEl) {
+            this.marketStatusEl.style.display = 'inline';
+        }
     }
 
     private async handleSubmit(e: Event) {
         e.preventDefault();
 
-        // ✅ VÉRIFICATION AUTHENTIFICATION
         if (!AuthClient.isAuthenticated()) {
             this.showStatus('❌ Vous devez être connecté pour trader!', 'error');
             console.warn('⚠️ Tentative de trade sans authentification');
@@ -211,7 +238,6 @@ class TradingPanel {
         const tp = tpInput ? parseFloat(tpInput) : null;
         const sl = slInput ? parseFloat(slInput) : null;
 
-        // Valider
         if (!symbol || !volume) {
             this.showStatus('❌ Symbole et volume sont requis', 'error');
             return;
@@ -240,7 +266,6 @@ class TradingPanel {
                 'success'
             );
 
-            // ========== CRÉER LA POSITION SUR LE GRAPHIQUE ==========
             if (this.tradingPlatform) {
                 const symbol = (document.getElementById('trade-symbol') as HTMLSelectElement).value;
                 const entry = parseFloat((document.getElementById('entry-price') as HTMLInputElement).value);
@@ -261,7 +286,6 @@ class TradingPanel {
                 console.log('📊 Position tracée sur le graphique');
             }
 
-            // Réinitialiser le formulaire après un court délai
             setTimeout(() => {
                 this.form.reset();
                 this.clearStatus();
@@ -281,7 +305,7 @@ class TradingPanel {
         }
     }
 
-    private showStatus(message: string, type: 'success' | 'error' | 'loading') {
+    public showStatus(message: string, type: 'success' | 'error' | 'loading') {
         if (!this.orderStatusEl) return;
         this.orderStatusEl.textContent = message;
         this.orderStatusEl.className = `order-status ${type}`;
@@ -306,9 +330,6 @@ class TradingPlatform {
     private tradingPanel: TradingPanel | null = null;
     private selectedPosition: ActivePosition | null = null;
 
-    /**
-     * Obtenir les couleurs du thème depuis CSS
-     */
     private getThemeColors() {
         const style = getComputedStyle(document.body);
         return {
@@ -320,9 +341,6 @@ class TradingPlatform {
         };
     }
 
-    /**
-     * Appliquer le thème au graphique
-     */
     private applyThemeToChart() {
         const colors = this.getThemeColors();
         
@@ -352,19 +370,11 @@ class TradingPlatform {
             wickUpColor: colors.chartUp,
             wickDownColor: colors.chartDown,
         });
-
-        console.log(`🎨 Thème graphique appliqué`);
     }
 
     constructor() {
         const container = document.getElementById('chart-container');
-        if (!container) {
-            console.error('❌ #chart-container not found!');
-            return;
-        }
-
-        const rect = container.getBoundingClientRect();
-        console.log(`📊 Dimensions du conteneur: ${rect.width}x${rect.height}`);
+        if (!container) return;
 
         const colors = this.getThemeColors();
 
@@ -396,7 +406,7 @@ class TradingPlatform {
             wickDownColor: colors.chartDown,
         });
 
-        console.log('✅ Série de chandelier créée');
+        this.tradingPanel = new TradingPanel(this);
 
         this.setupToolbar();
         this.setupChartInteractions();
@@ -404,15 +414,8 @@ class TradingPlatform {
         this.setupTimeframeButtons();
         this.setupOverlay();
 
-        // Initialiser le panneau de trading avec une référence à cette plateforme
-        this.tradingPanel = new TradingPanel(this);
-        console.log('✅ Panneau de trading initialisé');
-
-        console.log('✅ Interfaces utilisateur initialisées');
-
         this.loadMarketData('XAUUSD', '1m');
 
-        // Écouter les changements de thème
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 if (mutation.type === 'attributes' && mutation.attributeName === 'data-theme') {
@@ -434,7 +437,6 @@ class TradingPlatform {
         });
     }
 
-    // ========== BARRE D'OUTILS ==========
     private setupToolbar() {
         document.querySelectorAll('.tool-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
@@ -452,12 +454,10 @@ class TradingPlatform {
 
                 activeTool = toolMap[toolId] || 'cursor';
                 firstClickPoint = null;
-                console.log(`✅ Outil actif: ${activeTool}`);
             });
         });
     }
 
-    // ========== INTERACTIONS AVEC LE GRAPHIQUE ==========
     private setupChartInteractions() {
         const container = document.getElementById('chart-container') as HTMLElement;
         if (!container) return;
@@ -477,22 +477,18 @@ class TradingPlatform {
             const clickPoint = { time: logicalPosition as any, price: seriesCoordinate };
 
             if (activeTool === 'cursor') {
-                // Chercher si on a cliqué sur une position active
                 const positionClicked = this.checkPositionSelection(clickPoint.price);
                 if (positionClicked) {
                     this.selectPosition(positionClicked);
                     return;
                 }
 
-                // Chercher si on a cliqué sur un objet de dessin
                 this.checkForSelection(clickPoint);
                 return;
             }
 
-            // Pour les outils de dessin : 2 clics nécessaires
             if (!firstClickPoint) {
                 firstClickPoint = clickPoint;
-                console.log(`📌 Point 1 marqué: ${clickPoint.price.toFixed(2)}`);
             } else {
                 this.executeTool(activeTool, firstClickPoint, clickPoint);
                 firstClickPoint = null;
@@ -500,11 +496,9 @@ class TradingPlatform {
         });
     }
 
-    // ========== DÉTECTION DE SÉLECTION DE POSITION ==========
     private checkPositionSelection(price: number): ActivePosition | null {
         if (!this.tradingPanel) return null;
 
-        // Trouver une position où le prix cliqué est entre SL et TP
         return this.tradingPanel.activePositions.find((pos) => {
             const minPrice = Math.min(pos.sl, pos.tp);
             const maxPrice = Math.max(pos.sl, pos.tp);
@@ -512,9 +506,7 @@ class TradingPlatform {
         }) || null;
     }
 
-    // ========== DÉTECTION DE SÉLECTION ==========
     private checkForSelection(clickPoint: { time: any; price: number }) {
-        // Chercher si on a cliqué sur un rectangle
         const found = this.drawingObjects.find((obj) => {
             if (obj.type !== 'rect') return false;
             if (!obj.p2) return false;
@@ -532,14 +524,11 @@ class TradingPlatform {
         }
     }
 
-    // ========== EXÉCUTION DES OUTILS ==========
     private executeTool(
         tool: ToolType,
         p1: { time: any; price: number },
         p2: { time: any; price: number }
     ) {
-        console.log(`🎨 Exécution: ${tool}`);
-
         if (tool === 'hline') {
             this.createHorizontalLine(p1.price);
         } else if (tool === 'rect') {
@@ -551,7 +540,6 @@ class TradingPlatform {
         }
     }
 
-    // ========== CRÉATION DES OBJETS ==========
     private createHorizontalLine(price: number) {
         const obj: DrawingObject = {
             id: 'hline_' + Date.now(),
@@ -567,7 +555,6 @@ class TradingPlatform {
 
         this.drawingObjects.push(obj);
         this.renderHorizontalLine(obj);
-        // Sauvegarder dans la BD
         this.saveDrawingToDatabase(obj);
     }
 
@@ -587,8 +574,7 @@ class TradingPlatform {
 
         this.drawingObjects.push(obj);
         this.renderRectangle(obj);
-        this.selectObject(obj); // Auto-sélectionner après création
-        // Sauvegarder dans la BD
+        this.selectObject(obj);
         this.saveDrawingToDatabase(obj);
     }
 
@@ -610,8 +596,6 @@ class TradingPlatform {
                 title: `Fib ${label}`,
             });
         });
-
-        console.log(`📊 Fibonacci tracé`);
     }
 
     private createPosition(entryPrice: number, targetPrice: number) {
@@ -643,14 +627,8 @@ class TradingPlatform {
             axisLabelVisible: true,
             title: `SL: ${slPrice.toFixed(2)}`,
         });
-
-        const ratio = ((diff / entryPrice) * 100).toFixed(2);
-        console.log(
-            `🎯 Position: ENTRY=${entryPrice.toFixed(2)}, TP=${targetPrice.toFixed(2)}, SL=${slPrice.toFixed(2)} (${ratio}%)`
-        );
     }
 
-    // ========== RENDU DES OBJETS ==========
     private renderHorizontalLine(obj: DrawingObject) {
         obj.series.forEach((s) => this.chart.removeSeries(s));
         obj.series = [];
@@ -682,64 +660,27 @@ class TradingPlatform {
         const lineStyle = obj === this.selectedObject ? 0 : 2;
         const lineWidth = obj === this.selectedObject ? 2 : 1;
 
-        // Haut du rectangle
-        const top = this.chart.addSeries(LineSeries, {
-            color: obj.color,
-            lineWidth: lineWidth,
-            lineStyle: lineStyle,
-        });
+        const top = this.chart.addSeries(LineSeries, { color: obj.color, lineWidth: lineWidth, lineStyle: lineStyle });
+        top.setData([{ time: obj.p1.time, value: obj.p1.price }, { time: obj.p2.time, value: obj.p1.price }]);
 
-        top.setData([
-            { time: obj.p1.time, value: obj.p1.price },
-            { time: obj.p2.time, value: obj.p1.price },
-        ]);
+        const bottom = this.chart.addSeries(LineSeries, { color: obj.color, lineWidth: lineWidth, lineStyle: lineStyle });
+        bottom.setData([{ time: obj.p1.time, value: obj.p2.price }, { time: obj.p2.time, value: obj.p2.price }]);
 
-        // Bas du rectangle
-        const bottom = this.chart.addSeries(LineSeries, {
-            color: obj.color,
-            lineWidth: lineWidth,
-            lineStyle: lineStyle,
-        });
+        const left = this.chart.addSeries(LineSeries, { color: obj.color, lineWidth: lineWidth, lineStyle: lineStyle });
+        left.setData([{ time: obj.p1.time, value: obj.p1.price }, { time: obj.p1.time, value: obj.p2.price }]);
 
-        bottom.setData([
-            { time: obj.p1.time, value: obj.p2.price },
-            { time: obj.p2.time, value: obj.p2.price },
-        ]);
-
-        // Côtés gauche et droit
-        const left = this.chart.addSeries(LineSeries, {
-            color: obj.color,
-            lineWidth: lineWidth,
-            lineStyle: lineStyle,
-        });
-
-        left.setData([
-            { time: obj.p1.time, value: obj.p1.price },
-            { time: obj.p1.time, value: obj.p2.price },
-        ]);
-
-        const right = this.chart.addSeries(LineSeries, {
-            color: obj.color,
-            lineWidth: lineWidth,
-            lineStyle: lineStyle,
-        });
-
-        right.setData([
-            { time: obj.p2.time, value: obj.p1.price },
-            { time: obj.p2.time, value: obj.p2.price },
-        ]);
+        const right = this.chart.addSeries(LineSeries, { color: obj.color, lineWidth: lineWidth, lineStyle: lineStyle });
+        right.setData([{ time: obj.p2.time, value: obj.p1.price }, { time: obj.p2.time, value: obj.p2.price }]);
 
         obj.series.push(top, bottom, left, right);
     }
 
-    // ========== GESTION DE LA SÉLECTION ==========
     private selectObject(obj: DrawingObject) {
         this.selectedObject = obj;
-        this.renderRectangle(obj); // Re-render avec bordure épaisse
+        this.renderRectangle(obj); 
         this.openOverlay(obj);
     }
 
-    // ========== OVERLAY DE PROPRIÉTÉS ==========
     private setupOverlay() {
         const closeBtn = document.getElementById('overlay-close');
         const saveBtn = document.getElementById('overlay-save');
@@ -749,17 +690,14 @@ class TradingPlatform {
         saveBtn?.addEventListener('click', () => this.saveObjectProperties());
         deleteBtn?.addEventListener('click', () => this.deleteObject());
 
-        // Gestion des onglets
         document.querySelectorAll('.overlay-tab-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
                 const tabName = btn.getAttribute('data-tab');
                 if (!tabName) return;
 
-                // Désactiver tous les onglets et panes
                 document.querySelectorAll('.overlay-tab-btn').forEach((b) => b.classList.remove('active'));
                 document.querySelectorAll('.overlay-tab-pane').forEach((p) => p.classList.remove('active'));
 
-                // Activer celui-ci
                 btn.classList.add('active');
                 const pane = document.getElementById(`tab-${tabName}`);
                 if (pane) pane.classList.add('active');
@@ -773,7 +711,6 @@ class TradingPlatform {
 
         overlay.classList.add('active');
 
-        // Reset les onglets : afficher le premier
         document.querySelectorAll('.overlay-tab-btn').forEach((b, i) => {
             if (i === 0) b.classList.add('active');
             else b.classList.remove('active');
@@ -783,7 +720,6 @@ class TradingPlatform {
             else p.classList.remove('active');
         });
 
-        // Remplir les champs
         const textField = document.getElementById('rect-text-content') as HTMLInputElement;
         const textColorField = document.getElementById('text-color-input') as HTMLInputElement;
         const objColorField = document.getElementById('obj-color-input') as HTMLInputElement;
@@ -809,7 +745,6 @@ class TradingPlatform {
         this.redrawAll();
     }
 
-    // ========== GESTION DES POSITIONS ACTIVES ==========
     private selectPosition(position: ActivePosition) {
         this.selectedPosition = position;
         this.openPositionOverlay(position);
@@ -821,7 +756,6 @@ class TradingPlatform {
 
         overlay.classList.add('active');
 
-        // Reset les onglets : afficher le premier
         document.querySelectorAll('.overlay-tab-btn').forEach((b, i) => {
             if (i === 0) b.classList.add('active');
             else b.classList.remove('active');
@@ -831,7 +765,6 @@ class TradingPlatform {
             else p.classList.remove('active');
         });
 
-        // Remplir les champs avec les données de position
         const titleEl = overlay.querySelector('h3');
         if (titleEl) {
             titleEl.textContent = `Position: ${position.type.toUpperCase()} ${position.symbol}`;
@@ -847,7 +780,6 @@ class TradingPlatform {
             slField.placeholder = 'Stop Loss';
         }
         
-        // Ajouter un champ TP
         let tpField = document.getElementById('position-tp-field') as HTMLInputElement;
         if (!tpField) {
             tpField = document.createElement('input');
@@ -861,7 +793,6 @@ class TradingPlatform {
         }
         tpField.value = position.tp.toFixed(5);
 
-        // Ajouter bouton "Appliquer les modifications"
         let applyBtn = overlay.querySelector('#position-apply-btn') as HTMLButtonElement;
         if (!applyBtn) {
             applyBtn = document.createElement('button');
@@ -872,7 +803,6 @@ class TradingPlatform {
             overlay.querySelector('.overlay-tab-pane')?.appendChild(applyBtn);
         }
 
-        // Ajouter bouton "Fermer la position"
         let closeBtn = overlay.querySelector('#position-close-btn') as HTMLButtonElement;
         if (!closeBtn) {
             closeBtn = document.createElement('button');
@@ -883,7 +813,6 @@ class TradingPlatform {
             overlay.querySelector('.overlay-tab-pane')?.appendChild(closeBtn);
         }
 
-        // Afficher le volume et le type
         if (textField) {
             textField.value = `${position.type.toUpperCase()} ${position.volume} lots @ ${position.entry.toFixed(5)}`;
         }
@@ -896,20 +825,16 @@ class TradingPlatform {
         const newSL = parseFloat(slField?.value || '0');
         const newTP = parseFloat(tpField?.value || '0');
 
-        // Validation
         if (!newSL || !newTP || newSL === position.sl && newTP === position.tp) {
             this.showPositionMessage('⚠️ Veuillez modifier au moins SL ou TP', 'warning');
             return;
         }
 
-        // Mettre à jour la position
         position.sl = newSL;
         position.tp = newTP;
 
-        console.log(`📍 Position mise à jour: TP=${newTP.toFixed(5)}, SL=${newSL.toFixed(5)}`);
         this.showPositionMessage(`✅ Position mise à jour! Ferme et rouvre pour voir les changements`);
 
-        // Fermer l'overlay après 2 secondes
         setTimeout(() => {
             this.closeOverlay();
         }, 2000);
@@ -918,19 +843,14 @@ class TradingPlatform {
     private closePosition(position: ActivePosition) {
         if (!this.tradingPanel) return;
 
-        // Retirer la position de la liste
         this.tradingPanel.activePositions = this.tradingPanel.activePositions.filter(
             p => p.id !== position.id
         );
 
-        // Effacer les price lines
-        position.priceLinesIds = []; // On ne peut pas retirer les price lines directement dans lightweight-charts
-        // donc on va simplement les ignorer lors du rendu
+        position.priceLinesIds = []; 
 
         this.selectedPosition = null;
         this.closeOverlay();
-
-        console.log(`🔴 Position ${position.id} fermée`);
         this.showPositionMessage(`✅ Position fermée!`);
     }
 
@@ -946,42 +866,22 @@ class TradingPlatform {
         }
     }
 
-    // ========== RENDU DE LA POSITION SUR LE GRAPHIQUE ==========
     public renderPositionOnChart(position: ActivePosition) {
         const entryColor = position.type === 'buy' ? '#00ff00' : '#ff6666';
         const tpColor = '#00ff00';
         const slColor = '#ff0000';
 
-        // Entry line
         this.candlesSeries.createPriceLine({
-            price: position.entry,
-            color: entryColor,
-            lineWidth: 2,
-            axisLabelVisible: true,
-            title: `ENTRY: ${position.entry.toFixed(5)} (${position.type.toUpperCase()})`,
+            price: position.entry, color: entryColor, lineWidth: 2, axisLabelVisible: true, title: `ENTRY: ${position.entry.toFixed(5)} (${position.type.toUpperCase()})`,
         });
 
-        // TP line
         this.candlesSeries.createPriceLine({
-            price: position.tp,
-            color: tpColor,
-            lineWidth: 2,
-            lineStyle: 1,
-            axisLabelVisible: true,
-            title: `TP: ${position.tp.toFixed(5)}`,
+            price: position.tp, color: tpColor, lineWidth: 2, lineStyle: 1, axisLabelVisible: true, title: `TP: ${position.tp.toFixed(5)}`,
         });
 
-        // SL line
         this.candlesSeries.createPriceLine({
-            price: position.sl,
-            color: slColor,
-            lineWidth: 2,
-            lineStyle: 1,
-            axisLabelVisible: true,
-            title: `SL: ${position.sl.toFixed(5)}`,
+            price: position.sl, color: slColor, lineWidth: 2, lineStyle: 1, axisLabelVisible: true, title: `SL: ${position.sl.toFixed(5)}`,
         });
-
-        console.log(`📍 Position ${position.type.toUpperCase()} tracée: Entry=${position.entry.toFixed(5)}, TP=${position.tp.toFixed(5)}, SL=${position.sl.toFixed(5)}`);
     }
 
     private saveObjectProperties() {
@@ -1005,9 +905,7 @@ class TradingPlatform {
         if (p2Field && this.selectedObject.p2) this.selectedObject.p2.price = parseFloat(p2Field.value);
 
         this.redrawAll();
-        // Mettre à jour dans la BD
         this.updateDrawingInDatabase(this.selectedObject);
-        console.log('✅ Propriétés sauvegardées');
     }
 
     private deleteObject() {
@@ -1018,14 +916,10 @@ class TradingPlatform {
         this.selectedObject.series.forEach((s) => this.chart.removeSeries(s));
         this.selectedObject = null;
 
-        // Supprimer de la BD
         this.deleteDrawingFromDatabase(deletedObject);
-
         this.closeOverlay();
-        console.log('🗑️ Objet supprimé');
     }
 
-    // ========== UTILITAIRES ==========
     private redrawAll() {
         this.drawingObjects.forEach((obj) => {
             if (obj.type === 'hline') {
@@ -1045,7 +939,6 @@ class TradingPlatform {
     }
 
     private rgbaToHex(rgba: string): string {
-        // Simple conversion rgba to hex
         const match = rgba.match(/\d+/g);
         if (!match || match.length < 3) return '#2962ff';
         const r = parseInt(match[0]).toString(16).padStart(2, '0');
@@ -1054,18 +947,30 @@ class TradingPlatform {
         return '#' + r + g + b;
     }
 
-    // ========== SÉLECTEUR D'ASSET ==========
     private setupAssetSelector() {
-        const select = document.getElementById('asset-select') as HTMLSelectElement;
-        if (select) {
-            select.addEventListener('change', (e) => {
-                this.currentSymbol = (e.target as HTMLSelectElement).value;
-                this.loadMarketData(this.currentSymbol, this.currentInterval);
-            });
+        const headerSelect = document.getElementById('asset-select') as HTMLSelectElement;
+        const panelSelect = document.getElementById('trade-symbol') as HTMLSelectElement;
+
+        const changeSymbol = (newSymbol: string) => {
+            if (this.currentSymbol === newSymbol) return; 
+            
+            this.currentSymbol = newSymbol;
+
+            if (headerSelect) headerSelect.value = newSymbol;
+            if (panelSelect) panelSelect.value = newSymbol;
+
+            this.loadMarketData(this.currentSymbol, this.currentInterval);
+        };
+
+        if (headerSelect) {
+            headerSelect.addEventListener('change', (e) => changeSymbol((e.target as HTMLSelectElement).value));
+        }
+
+        if (panelSelect) {
+            panelSelect.addEventListener('change', (e) => changeSymbol((e.target as HTMLSelectElement).value));
         }
     }
 
-    // ========== SÉLECTEUR DE TIMEFRAME ==========
     private setupTimeframeButtons() {
         document.querySelectorAll('.tf-btn').forEach((btn) => {
             btn.addEventListener('click', () => {
@@ -1078,9 +983,11 @@ class TradingPlatform {
         });
     }
 
-    // ========== CHARGEMENT DES DONNÉES ==========
+    // 🔴 MODIFIÉ : Le système qui sauve le graphique pendant le weekend !
     private async loadMarketData(symbol: string, interval: string) {
         console.log(`📡 Chargement: ${symbol} ${interval}`);
+
+        this.candlesSeries.setData([]); 
 
         if (this.marketService) {
             this.marketService.disconnect();
@@ -1088,7 +995,6 @@ class TradingPlatform {
 
         this.marketService = new MarketDataService(symbol, interval, (candle: Candle) => {
             this.candlesSeries.update(candle as any);
-            // Afficher le prix en temps réel immédiatement
             if (this.tradingPanel) {
                 this.tradingPanel.updateLivePrice(candle.close);
             }
@@ -1099,16 +1005,19 @@ class TradingPlatform {
             if (history && history.length > 0) {
                 this.candlesSeries.setData(history as any);
                 console.log(`✅ ${history.length} bougies chargées`);
+
+                // 🔴 SOLUTION DU WEEKEND : On force le prix à s'afficher avec la toute dernière bougie connue (vendredi soir)
+                if (this.tradingPanel) {
+                    const lastCandle = history[history.length - 1];
+                    this.tradingPanel.updateLivePrice(lastCandle.close);
+                }
             }
 
             this.marketService.connect();
 
-            // ========== CHARGER LES DESSINS DE L'UTILISATEUR ==========
             if (AuthClient.isAuthenticated()) {
                 await this.loadUserDrawings(symbol, interval);
             } else {
-                console.log('⚠️ Non authenticated - dessins non chargés');
-                // Effacer les dessins précédents
                 this.drawingObjects.forEach(obj => {
                     obj.series.forEach(s => this.chart.removeSeries(s));
                 });
@@ -1119,11 +1028,7 @@ class TradingPlatform {
         }
     }
 
-    /**
-     * Charger les dessins de l'utilisateur pour le symbole et timeframe actuels
-     */
     private async loadUserDrawings(symbol: string, interval: string) {
-        // Effacer les dessins précédents
         this.drawingObjects.forEach(obj => {
             obj.series.forEach(s => this.chart.removeSeries(s));
         });
@@ -1136,9 +1041,6 @@ class TradingPlatform {
             return;
         }
 
-        console.log(`📚 ${response.drawings.length} dessins chargés pour ${symbol} ${interval}`);
-
-        // ========== CONVERTIR LES DESSINS BD EN OBJETS INTERNES ==========
         for (const drawingData of response.drawings) {
             try {
                 const drawingObj: DrawingObject = {
@@ -1157,10 +1059,9 @@ class TradingPlatform {
                     text: drawingData.text || '',
                     textPos: (drawingData.textPos || 'middle') as 'top' | 'middle' | 'bottom',
                     textSize: drawingData.textSize || 12,
-                    series: [] // À remplir ci-dessous
+                    series: [] 
                 };
 
-                // Recréer les séries
                 this.redrawDrawing(drawingObj);
                 this.drawingObjects.push(drawingObj);
             } catch (error) {
@@ -1171,14 +1072,8 @@ class TradingPlatform {
         this.chart.timeScale().fitContent();
     }
 
-    /**
-     * Sauvegarder un dessin dans la base de données
-     */
     private async saveDrawingToDatabase(drawingObj: DrawingObject) {
-        if (!AuthClient.isAuthenticated()) {
-            console.warn('🔐 Non authentifié - dessin non sauvegardé');
-            return;
-        }
+        if (!AuthClient.isAuthenticated()) return;
 
         const drawingData = {
             type: drawingObj.type,
@@ -1194,25 +1089,14 @@ class TradingPlatform {
         };
 
         const response = await DrawingApiClient.createDrawing(drawingData);
-
         if (response.success) {
-            console.log('💾 Dessin sauvegardé dans la BD:', response.drawing);
             drawingObj.id = response.drawing?.id || drawingObj.id;
-        } else {
-            console.error('❌ Erreur sauvegarde BD:', response.error);
         }
     }
 
-    /**
-     * Mettre à jour un dessin dans la base de données
-     */
     private async updateDrawingInDatabase(drawingObj: DrawingObject) {
-        if (!AuthClient.isAuthenticated()) {
-            console.warn('🔐 Non authentifié - dessin non mis à jour');
-            return;
-        }
-
-        const response = await DrawingApiClient.updateDrawing(drawingObj.id, {
+        if (!AuthClient.isAuthenticated()) return;
+        await DrawingApiClient.updateDrawing(drawingObj.id, {
             p1: drawingObj.p1,
             p2: drawingObj.p2,
             color: drawingObj.color,
@@ -1221,34 +1105,26 @@ class TradingPlatform {
             textPos: drawingObj.textPos,
             textSize: drawingObj.textSize,
         });
-
-        if (response.success) {
-            console.log('✏️ Dessin mis à jour en BD:', response.drawing);
-        } else {
-            console.error('❌ Erreur mise à jour BD:', response.error);
-        }
     }
 
-    /**
-     * Supprimer un dessin de la base de données
-     */
     private async deleteDrawingFromDatabase(drawingObj: DrawingObject) {
-        if (!AuthClient.isAuthenticated()) {
-            console.warn('🔐 Non authentifié - dessin non supprimé');
-            return;
-        }
-
-        const response = await DrawingApiClient.deleteDrawing(drawingObj.id);
-
-        if (response.success) {
-            console.log('🗑️ Dessin supprimé de la BD');
-        } else {
-            console.error('❌ Erreur suppression BD:', response.error);
-        }
+        if (!AuthClient.isAuthenticated()) return;
+        await DrawingApiClient.deleteDrawing(drawingObj.id);
     }
 }
 
 // ========== GESTION DES BOUTONS BUY/SELL/CONFIG ==========
+
+function updateTradingButtonsVisibility() {
+    const quickButtonsContainer = document.querySelector('.trading-quick-buttons') as HTMLElement;
+    if (!quickButtonsContainer) return;
+
+    if (AuthClient.isAuthenticated()) {
+        quickButtonsContainer.style.display = 'flex';
+    } else {
+        quickButtonsContainer.style.display = 'none';
+    }
+}
 
 function setupTradingButtons() {
     const btnBuy = document.getElementById('quick-buy-btn') as HTMLButtonElement;
@@ -1257,81 +1133,68 @@ function setupTradingButtons() {
     const tradeForm = document.getElementById('trade-form') as HTMLFormElement;
     const tradingPanel = document.getElementById('trading-panel') as HTMLElement;
 
-    if (!btnBuy || !btnSell || !btnConfig || !tradeForm || !tradingPanel) {
-        console.warn('⚠️ Boutons de trading non trouvés');
-        return;
-    }
+    if (!btnBuy || !btnSell || !btnConfig || !tradeForm || !tradingPanel) return;
 
-    // Au clic sur BUY
+    updateTradingButtonsVisibility();
+
     btnBuy.addEventListener('click', () => {
         const orderTypeInput = document.querySelector('input[name="order-type"][value="buy"]') as HTMLInputElement;
-        if (orderTypeInput) {
-            orderTypeInput.checked = true;
-        }
+        if (orderTypeInput) orderTypeInput.checked = true;
         
-        // Afficher le formulaire et le panel
         tradeForm.style.display = 'block';
         tradingPanel.style.display = 'block';
         tradingPanel.style.height = 'auto';
         tradingPanel.style.maxHeight = '80vh';
         tradingPanel.style.overflow = 'auto';
         
-        // Afficher le statut du serveur
         const serverStatus = document.getElementById('server-status');
         if (serverStatus) serverStatus.style.display = 'block';
-        
-        console.log('🔼 Mode BUY activé');
     });
 
-    // Au clic sur SELL
     btnSell.addEventListener('click', () => {
         const orderTypeInput = document.querySelector('input[name="order-type"][value="sell"]') as HTMLInputElement;
-        if (orderTypeInput) {
-            orderTypeInput.checked = true;
-        }
+        if (orderTypeInput) orderTypeInput.checked = true;
         
-        // Afficher le formulaire et le panel
         tradeForm.style.display = 'block';
         tradingPanel.style.display = 'block';
         tradingPanel.style.height = 'auto';
         tradingPanel.style.maxHeight = '80vh';
         tradingPanel.style.overflow = 'auto';
         
-        // Afficher le statut du serveur
         const serverStatus = document.getElementById('server-status');
         if (serverStatus) serverStatus.style.display = 'block';
-        
-        console.log('🔽 Mode SELL activé');
     });
 
-    // Au clic sur CONFIG (⚙️) - Toggle
     btnConfig.addEventListener('click', () => {
         const isHidden = tradeForm.style.display === 'none' || tradeForm.style.display === '';
         const serverStatus = document.getElementById('server-status');
         
         if (isHidden) {
-            // Afficher
             tradeForm.style.display = 'block';
             tradingPanel.style.display = 'block';
             tradingPanel.style.height = 'auto';
             tradingPanel.style.maxHeight = '80vh';
             tradingPanel.style.overflow = 'auto';
             if (serverStatus) serverStatus.style.display = 'block';
-            console.log('⚙️ Formulaire d\'ordre ouvert');
         } else {
-            // Masquer
             tradeForm.style.display = 'none';
             tradingPanel.style.display = 'none';
             if (serverStatus) serverStatus.style.display = 'none';
-            console.log('⚙️ Formulaire d\'ordre fermé');
         }
     });
 
-    // Masquer le formulaire et le panel au démarrage
     tradeForm.style.display = 'none';
     tradingPanel.style.display = 'none';
     const serverStatus = document.getElementById('server-status');
     if (serverStatus) serverStatus.style.display = 'none';
+
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'auth_token' || e.key === 'current_user') {
+            updateTradingButtonsVisibility();
+        }
+    });
+
+    (window as any).updateTradingButtonsVisibility = updateTradingButtonsVisibility;
 }
 
 // ========== INITIALISATION ==========
@@ -1339,7 +1202,6 @@ function initPlatform() {
     console.log('🚀 Démarrage de la plateforme de trading...');
     setupTradingButtons();
     new TradingPlatform();
-    console.log('🎉 Plateforme initialisée');
 }
 
 if (document.readyState === 'loading') {
