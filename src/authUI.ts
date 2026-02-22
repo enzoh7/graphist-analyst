@@ -87,6 +87,15 @@ class AuthUI {
     if (prefTheme) {
       prefTheme.addEventListener('change', () => this.updatePreferences());
     }
+
+    // Bouton toggle pour afficher/masquer le mot de passe
+    const loginPasswordToggle = document.getElementById('login-password-toggle') as HTMLButtonElement;
+    if (loginPasswordToggle) {
+      loginPasswordToggle.addEventListener('click', (e) => {
+        e.preventDefault();
+        this.togglePasswordVisibility('login-password');
+      });
+    }
   }
 
   /**
@@ -125,6 +134,47 @@ class AuthUI {
   closeAuthModal() {
     const modal = document.getElementById('auth-modal');
     modal.classList.remove('active');
+  }
+
+  /**
+   * Afficher/Masquer le mot de passe
+   */
+  togglePasswordVisibility(inputId: string) {
+    const passwordInput = document.getElementById(inputId) as HTMLInputElement;
+    const toggleBtn = document.querySelector(`[data-password-toggle="${inputId}"]`) as HTMLButtonElement;
+    
+    // Si on n'a pas trouvé le bouton par data-attribute, chercher par id
+    if (!toggleBtn) {
+      const allToggleBtns = document.querySelectorAll('.password-toggle-btn');
+      const btnsByParent = Array.from(allToggleBtns).find(btn => {
+        const wrapper = btn.parentElement;
+        return wrapper?.querySelector(`#${inputId}`) !== null;
+      }) as HTMLButtonElement;
+      
+      if (btnsByParent) {
+        this.togglePasswordInput(passwordInput, btnsByParent);
+        return;
+      }
+    }
+    
+    if (passwordInput && toggleBtn) {
+      this.togglePasswordInput(passwordInput, toggleBtn);
+    }
+  }
+
+  /**
+   * Helper pour basculer le type d'input password/text
+   */
+  private togglePasswordInput(input: HTMLInputElement, btn: HTMLButtonElement) {
+    if (input.type === 'password') {
+      input.type = 'text';
+      btn.textContent = '🙈';
+      btn.title = 'Masquer le mot de passe';
+    } else {
+      input.type = 'password';
+      btn.textContent = '👁️';
+      btn.title = 'Afficher le mot de passe';
+    }
   }
 
   /**
@@ -389,6 +439,11 @@ class AuthUI {
 
       // Afficher par défaut le tab login
       this.switchAuthTab('login');
+    }
+
+    // Mettre à jour la visibilité des boutons de trading rapides
+    if ((window as any).updateTradingButtonsVisibility) {
+      (window as any).updateTradingButtonsVisibility();
     }
   }
 

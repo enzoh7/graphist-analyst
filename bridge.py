@@ -1,211 +1,219 @@
-import MetaTrader5 as mt5
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import zmq
+import json
 import logging
+import traceback
+import pandas as pd
+import MetaTrader5 as mt5
 
-# ========== LOGGER ==========
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-app = Flask(__name__)
-CORS(app) 
+# Configuration du logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger("BridgeZMQ")
 
 # ========== INITIALISATION MT5 ==========
-mt5_connected = False
-try:
-    if mt5.initialize():
-        mt5_connected = True
-        logger.info(f"✅ MT5 CONNECTÉ : {mt5.account_info().company}")
-    else:
-        logger.error("❌ MT5 n'est pas ouvert sur votre PC")
-except Exception as e:
-    logger.error(f"❌ Erreur MT5: {e}")
+if not mt5.initialize():
+    logger.critical(f"❌ MT5 initialization failed. Code: {mt5.last_error()}")
+    quit()
 
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "ok", "connected": mt5_connected}), 200
+account_info = mt5.account_info()
+if account_info:
+    logger.info(f"✅ MT5 CONNECTÉ : {account_info.company} (Compte: {account_info.login})")
+else:
+    logger.warning("⚠️  MT5 connecté mais aucun compte connecté")
 
-@app.route('/price/<symbol>', methods=['GET'])
-def get_price(symbol):
+def get_filling_mode():
+    """Détermine le mode de remplissage accepté par le broker (Crucial pour MultiBank)"""
     try:
-        if not mt5_connected: return jsonify({"status": "error"}), 503
-        symbol_input = symbol.upper().replace('USDT', 'USD')
-        
-        # Chercher le symbole exact
-        symbols = mt5.symbols_get()
-        matching = [s for s in symbols if s.name.startswith(symbol_input)]
-        if not matching:
-            matching = [s for s in symbols if symbol_input in s.name]
-        if not matching:
-            return jsonify({"status": "error", "message": f"Symbol {symbol_input} not found"}), 404
-        
-        symbol = matching[0].name
-        mt5.symbol_select(symbol)
-        tick = mt5.symbol_info_tick(symbol)
-        if not tick: return jsonify({"status": "error", "message": "Tick data unavailable"}), 404
-        return jsonify({"status": "success", "symbol": symbol, "ask": float(tick.ask), "bid": float(tick.bid), "time": int(tick.time), "volume": float(tick.volume)})
-    except Exception as e:
-        logger.error(f"❌ get_price error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/history/<symbol>', methods=['GET'])
-def get_history(symbol):
-    try:
-        symbol_input = symbol.upper().replace('USDT', 'USD')
-        limit = int(request.args.get('limit', 500))
-        timeframe_str = request.args.get('timeframe', '1m').lower()
-        
-        # Map timeframes
-        tf_map = {
-            '1m': mt5.TIMEFRAME_M1, 
-            '5m': mt5.TIMEFRAME_M5, 
-            '15m': mt5.TIMEFRAME_M15, 
-            '30m': mt5.TIMEFRAME_M30,
-            '1h': mt5.TIMEFRAME_H1, 
-            '4h': mt5.TIMEFRAME_H4,
-            '1d': mt5.TIMEFRAME_D1,
-            '1w': mt5.TIMEFRAME_W1
-        }
-        
-        # Chercher le symbole exact (IMPORTANT!)
-        symbols = mt5.symbols_get()
-        matching = [s for s in symbols if s.name.startswith(symbol_input)]
-        if not matching:
-            matching = [s for s in symbols if symbol_input in s.name]
-        if not matching:
-            logger.warning(f"⚠️  Symbol {symbol_input} not found. Available: {[s.name for s in symbols[:10]]}")
-            return jsonify({"status": "error", "message": f"Symbol {symbol_input} not found"}), 404
-        
-        symbol = matching[0].name
-        logger.info(f"✅ Found symbol: {symbol}")
-        
-        # Activer et récupérer
-        mt5.symbol_select(symbol)
-        rates = mt5.copy_rates_from_pos(symbol, tf_map.get(timeframe_str, mt5.TIMEFRAME_M1), 0, limit)
-        
-        if rates is None or len(rates) == 0:
-            logger.error(f"❌ No rates for {symbol}")
-            return jsonify({"status": "error", "message": f"No data for {symbol}"}), 404
-        
-        candles = []
-        for r in rates:
-            try:
-                candles.append({
-                    "time": int(r['time']), 
-                    "open": float(r['open']), 
-                    "high": float(r['high']), 
-                    "low": float(r['low']), 
-                    "close": float(r['close']),
-                    "volume": float(r['tick_volume'])
-                })
-            except Exception as e:
-                logger.error(f"❌ Error converting rate: {e}")
-                continue
-        
-        logger.info(f"✅ Returned {len(candles)} candles for {symbol} {timeframe_str}")
-        return jsonify({"status": "success", "candles": candles})
-    except Exception as e:
-        logger.error(f"❌ get_history error: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/trade', methods=['POST'])
-def trade():
-    try:
-        data = request.json
-        # CORRECTION : Traduction automatique BTCUSDT -> BTCUSD pour MultiBank
-        symbol_input = data.get('symbol', '').upper().replace('USDT', 'USD')
-        order_type = data.get('type', '').lower()
-        volume = float(data.get('volume', 0.01))
-        sl = float(data.get('sl', 0))
-        tp = float(data.get('tp', 0))
-
-        if not mt5_connected: return jsonify({"status": "error", "message": "MT5 non connecté"}), 503
-
-        # 1. Trouver le nom exact (chercher avec plusieurs variantes)
-        symbols = mt5.symbols_get()
-        matching = [s for s in symbols if s.name.startswith(symbol_input)]
-        
-        # Si pas trouvé, essayer de chercher partiellement
-        if not matching:
-            logger.warning(f"⚠️  Symbole {symbol_input} non trouvé par startswith, recherche partielle...")
-            matching = [s for s in symbols if symbol_input in s.name]
-        
-        if not matching:
-            # Essayer de lister les symboles proches
-            logger.error(f"❌ Symbole {symbol_input} non trouvé sur MT5")
-            close_matches = [s.name for s in symbols if any(p in s.name for p in [symbol_input[:3], symbol_input[-3:]])][: 5]
-            logger.error(f"   Symboles proches: {close_matches}")
-            return jsonify({
-                "status": "error",
-                "message": f"Symbole {symbol_input} non trouvé sur MT5",
-                "suggestions": close_matches
-            }), 400
-        
-        symbol = matching[0].name
-        logger.info(f"✅ Symbole trouvé: {symbol}")
-        
-        mt5.symbol_select(symbol)
-        s_info = mt5.symbol_info(symbol)
-        
-        if not s_info:
-            logger.error(f"❌ Impossible de récupérer les infos du symbole {symbol}")
-            return jsonify({"status": "error", "message": f"Erreur symbole {symbol}"}), 400
-
-        # 2. Mode de remplissage - utiliser ce qui est disponible
-        # FOK = 1, RETURN = 2, IOC n'existe pas toujours
+        return mt5.ORDER_FILLING_FOK
+    except AttributeError:
         try:
-            filling = mt5.ORDER_FILLING_FOK
+            return mt5.ORDER_FILLING_RETURN
         except AttributeError:
-            try:
-                filling = mt5.ORDER_FILLING_RETURN
-            except AttributeError:
-                # Fallback: pas de spécification du type de remplissage
-                filling = 1  # FOK par défaut
+            logger.warning("⚠️  Aucun mode de remplissage spécifique trouvé, utilisation du mode par défaut")
+            return 1  # FOK par défaut
 
-        # 3. Prix et Arrondi (Crucial pour MultiBank Réel)
-        tick = mt5.symbol_info_tick(symbol)
-        if not tick:
-            logger.error(f"❌ Impossible de récupérer le prix pour {symbol}")
-            return jsonify({"status": "error", "message": f"Prix non disponible pour {symbol}"}), 400
+# ========== CACHE DES SYMBOLES (Ultra-Rapide) ==========
+_symbol_cache = {}
+
+def get_real_symbol(requested_symbol):
+    """Trouve le vrai nom du symbole chez le broker (ex: XAUUSD -> XAUUSDc) et le mémorise"""
+    if requested_symbol in _symbol_cache:
+        return _symbol_cache[requested_symbol] # Renvoi instantané si déjà connu
+
+    symbols = mt5.symbols_get()
+    if symbols:
+        # 1. Cherche la correspondance exacte
+        for s in symbols:
+            if s.name == requested_symbol:
+                _symbol_cache[requested_symbol] = s.name
+                return s.name
+        # 2. Cherche si le symbole commence par le nom (ex: XAUUSDc)
+        for s in symbols:
+            if s.name.startswith(requested_symbol):
+                _symbol_cache[requested_symbol] = s.name
+                return s.name
+                
+    return requested_symbol # Par défaut
+
+# ========== DÉMARRAGE ZEROMQ ==========
+context = zmq.Context()
+socket = context.socket(zmq.REP)
+socket.bind("tcp://127.0.0.1:5555")
+logger.info("🚀 Bridge ZMQ démarré sur tcp://127.0.0.1:5555")
+
+while True:
+    message = socket.recv_string()
+    response = {"status": "error", "message": "Unknown error"}
+    action = None # Initialisé à None pour éviter les erreurs dans les logs si JSON plante
+
+    try: 
+        req = json.loads(message)
+        action = req.get("action")
+
+        if action == "health":
+            response = {"status": "ok", "mt5_connected": True}
+
+        elif action == "price":
+            symbol = get_real_symbol(req.get("symbol"))
+            mt5.symbol_select(symbol, True)
+            tick = mt5.symbol_info_tick(symbol)
+
+            if tick:
+                response = {"status": "success", "bid": tick.bid, "ask": tick.ask}
+            else:
+                response = {"status": "error", "message": f"Prix introuvable pour {symbol}"}
+
+        elif action == "history":
+            symbol = get_real_symbol(req.get("symbol"))
+            limit = req.get("limit", 500)
+            tf_str = req.get("timeframe", "1m").lower()
+
+            tf_map = {
+                "1m": mt5.TIMEFRAME_M1,
+                "5m": mt5.TIMEFRAME_M5,
+                "15m": mt5.TIMEFRAME_M15,
+                "30m": mt5.TIMEFRAME_M30,
+                "1h": mt5.TIMEFRAME_H1,
+                "4h": mt5.TIMEFRAME_H4,
+                "1d": mt5.TIMEFRAME_D1,
+                "1w": mt5.TIMEFRAME_W1
+            }
+            tf = tf_map.get(tf_str, mt5.TIMEFRAME_M1)
+
+            mt5.symbol_select(symbol, True)
+            rates = mt5.copy_rates_from_pos(symbol, tf, 0, limit)
+
+            if rates is not None and len(rates) > 0:
+                df = pd.DataFrame(rates)
+                df['time'] = df['time'].astype(int)
+                response = {"status": "success", "candles": df.to_dict(orient="records")}
+            else:
+                response = {"status": "error", "message": f"Historique introuvable pour {symbol}"}
+
+        elif action == "trade":
+            symbol = get_real_symbol(req.get("symbol"))
+            order_type = req.get("type", "").lower()
+            volume = float(req.get("volume", 0.01))
+            sl_raw = float(req.get("sl", 0))
+            tp_raw = float(req.get("tp", 0))
+
+            mt5.symbol_select(symbol, True)
+            s_info = mt5.symbol_info(symbol)
             
-        price = round(tick.ask if order_type == 'buy' else tick.bid, s_info.digits)
+            if not s_info:
+                response = {"status": "error", "message": f"Symbole invalide: {symbol}"}
+            else:
+                tick = mt5.symbol_info_tick(symbol)
+                price_raw = tick.ask if order_type == 'buy' else tick.bid
+                price = round(price_raw, s_info.digits)
+                sl = round(sl_raw, s_info.digits) if sl_raw > 0 else 0.0
+                tp = round(tp_raw, s_info.digits) if tp_raw > 0 else 0.0
+                
+                type_mt5 = mt5.ORDER_TYPE_BUY if order_type == "buy" else mt5.ORDER_TYPE_SELL
+                filling_mode = get_filling_mode()
 
-        req_data = {
-            "action": mt5.TRADE_ACTION_DEAL,
-            "symbol": symbol,
-            "volume": volume,
-            "type": mt5.ORDER_TYPE_BUY if order_type == 'buy' else mt5.ORDER_TYPE_SELL,
-            "price": price,
-            "magic": 2026,
-            "comment": "Pro Analyst Trade",
-            "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": filling,
-        }
+                request_trade = {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "symbol": symbol,
+                    "volume": volume,
+                    "type": type_mt5,
+                    "price": price,
+                    "sl": sl,
+                    "tp": tp,
+                    "deviation": 20,
+                    "magic": 2026,
+                    "comment": "Graphist Analyst ZMQ",
+                    "type_time": mt5.ORDER_TIME_GTC,
+                    "type_filling": filling_mode,
+                }
 
-        if sl > 0: req_data["sl"] = round(sl, s_info.digits)
-        if tp > 0: req_data["tp"] = round(tp, s_info.digits)
+                logger.info(f"📤 Envoi ordre: {order_type.upper()} {volume} {symbol} @ {price}")
+                result = mt5.order_send(request_trade)
 
-        logger.info(f"📤 Envoi ordre: {order_type.upper()} {volume} {symbol} @ {price}")
-        result = mt5.order_send(req_data)
-        
-        if result is None:
-            logger.error(f"❌ order_send retourné None")
-            logger.error(f"   MT5 error: {mt5.last_error()}")
-            return jsonify({"status": "error", "message": "Erreur ordre (None returned)"}), 400
-        
-        if result.retcode != mt5.TRADE_RETCODE_DONE:
-            logger.error(f"❌ Ordre rejeté: {result.comment}")
-            return jsonify({"status": "error", "message": f"MT5: {result.comment}"}), 400
-        
-        logger.info(f"✅ Ordre exécutée: ID {result.order}")
-        return jsonify({"status": "success", "order_id": str(result.order)}), 200
+                if result is None:
+                    response = {"status": "error", "message": f"Erreur MT5 (None). Code: {mt5.last_error()}"}
+                elif result.retcode != mt5.TRADE_RETCODE_DONE:
+                    logger.error(f"❌ Ordre rejeté: {result.comment}")
+                    response = {"status": "error", "message": result.comment}
+                else:
+                    logger.info(f"✅ Ordre exécuté: ID {result.order}")
+                    response = {"status": "success", "order_id": str(result.order)}
+
+        elif action == "positions":
+            positions = mt5.positions_get()
+            if positions:
+                df = pd.DataFrame(list(positions), columns=positions[0]._asdict().keys())
+                response = {"status": "success", "positions": df.to_dict(orient="records")}
+            else:
+                response = {"status": "success", "positions": []}
+
+        elif action == "symbols":
+            symbols = mt5.symbols_get()
+            if symbols:
+                response = {"status": "success", "symbols": [s.name for s in symbols if s.visible]}
+            else:
+                response = {"status": "success", "symbols": []}
+
+        elif action == "switch_account":
+            login = int(req.get("login", 0))
+            password = req.get("password", "")
+            server = req.get("server", "")
+
+            if not login or not password or not server:
+                response = {"status": "error", "message": "Identifiants manquants (login, password, server)"}
+            else:
+                authorized = mt5.login(login, password=password, server=server)
+                
+                if authorized:
+                    account_info = mt5.account_info()
+                    logger.info(f"🔄 SWITCH RÉUSSI : Connecté au compte {login} ({server})")
+                    response = {
+                        "status": "success", 
+                        "message": "Connecté avec succès", 
+                        "company": account_info.company, 
+                        "login": account_info.login
+                    }
+                else:
+                    logger.error(f"❌ SWITCH ÉCHOUÉ : Erreur {mt5.last_error()}")
+                    response = {"status": "error", "message": f"Échec de connexion MT5. Vérifiez vos identifiants. Code: {mt5.last_error()}"}
+
     except Exception as e:
-        logger.error(f"❌ Erreur trade: {e}")
-        import traceback
+        # SÉCURITÉ MAXIMALE : On log l'erreur mais le script Python ne crash jamais.
+        logger.error(f"❌ Erreur inattendue: {e}")
         logger.error(traceback.format_exc())
-        return jsonify({"status": "error", "message": str(e)}), 500
+        response = {"status": "error", "message": "Erreur interne du Bridge"}
 
-if __name__ == "__main__":
-    app.run(host='127.0.0.1', port=5000)
+    # === SYSTÈME DE LOG HAUTE-VITESSE ===
+    if action and action != "health": # On ignore le "ping" de 10s pour ne pas polluer
+        if action == "history" and response.get("status") == "success":
+            nb_candles = len(response.get("candles", []))
+            logger.info(f"⚡ ZMQ | Action: {action.upper():<7} | Symbole: {symbol:<8} | Résultat: {nb_candles} bougies")
+        else:
+            status = response.get("status", "error")
+            requested_symbol = req.get('symbol', 'N/A') if 'req' in locals() else 'N/A'
+            logger.info(f"⚡ ZMQ | Action: {action.upper():<7} | Symbole: {requested_symbol:<8} | Statut: {status}")
+
+    socket.send_string(json.dumps(response))

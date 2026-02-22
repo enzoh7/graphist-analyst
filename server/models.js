@@ -36,19 +36,19 @@ const userSchema = new mongoose.Schema({
     default: Date.now
   },
 
-  // Broker MetaApi (optionnel)
+  // Broker MT5 (via bridge.py)
   brokerConfig: {
-    metaApiToken: {
-      type: String,
-      select: false // Ne pas retourner les credentials par défaut
-    },
-    accountId: {
-      type: String,
-      select: false
-    },
     isConfigured: {
       type: Boolean,
       default: false
+    },
+    configuredAt: {
+      type: Date,
+      default: null
+    },
+    type: {
+      type: String,
+      default: 'MT5-Direct'
     }
   },
 

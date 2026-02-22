@@ -267,46 +267,30 @@ router.put('/preferences', authenticateToken, async (req, res) => {
   }
 });
 
-// ========== ROUTE: Configurer Broker MetaApi ==========
+// ========== ROUTE: Configurer Broker (MT5 via Bridge) ==========
 router.post('/broker-config', authenticateToken, async (req, res) => {
   try {
-    const { metaApiToken, accountId } = req.body;
-
-    // ========== VALIDATION ==========
-    if (!metaApiToken || metaApiToken.trim().length < 10) {
-      return res.status(400).json({
-        error: 'Token MetaApi invalide (min 10 caractères)'
-      });
-    }
-
-    if (!accountId || accountId.trim().length < 5) {
-      return res.status(400).json({
-        error: 'ID du compte invalide'
-      });
-    }
-
-    // ========== SAUVEGARDER CREDENTIALS ==========
-    // ⚠️ EN PRODUCTION: Chiffer les credentials avec une clé KMS
+    // ========== SAUVEGARDER CONFIGURATION ==========
+    // La connexion à MT5 se fait via le bridge.py
     const user = await User.findByIdAndUpdate(
       req.user.id,
       {
         $set: {
-          'brokerConfig.metaApiToken': metaApiToken,
-          'brokerConfig.accountId': accountId,
           'brokerConfig.isConfigured': true,
-          'brokerConfig.configuredAt': new Date()
+          'brokerConfig.configuredAt': new Date(),
+          'brokerConfig.type': 'MT5-Direct'
         }
       },
       { new: true }
     );
 
-    console.log(`✅ Config MetaApi sauvegardée: ${req.user.email} - Account: ${accountId}`);
+    console.log(`✅ Broker MT5 configuré: ${req.user.email}`);
 
     res.json({
       success: true,
       brokerConfigured: true,
       brokerConnected: true,
-      brokerAccountId: accountId
+      brokerName: 'MT5 (Direct)'
     });
 
   } catch (error) {
@@ -327,16 +311,11 @@ router.get('/broker-status', authenticateToken, async (req, res) => {
     }
 
     const brokerConfigured = user.brokerConfig?.isConfigured || false;
-    const brokerToken = user.brokerConfig?.metaApiToken;
-    
-    // Vérifier si le token existe et est valide (simple check)
-    const brokerConnected = brokerConfigured && brokerToken && brokerToken.length > 10;
 
     res.json({
       brokerConfigured: brokerConfigured,
-      brokerConnected: brokerConnected,
-      brokerAccountId: user.brokerConfig?.accountId || null,
-      brokerName: 'MexAtlantic-Real',
+      brokerConnected: brokerConfigured,
+      brokerName: 'MT5 (Direct)',
       brokerConnectedAt: user.brokerConfig?.configuredAt || null
     });
 

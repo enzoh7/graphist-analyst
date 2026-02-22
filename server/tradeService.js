@@ -1,10 +1,13 @@
 /**
  * Service de Trading - Gère la logique métier des ordres
+ * Communication via bridge.py qui interfacte MT5
  */
 
 export class TradeService {
-  constructor(metaApiAccount) {
-    this.account = metaApiAccount;
+  constructor() {
+    // Le service communique avec MT5 uniquement via le bridge.py
+    // Les méthodes ci-dessous définissent la logique métier,
+    // mais les appels réels vont au bridge REST
   }
 
   /**
@@ -38,67 +41,62 @@ export class TradeService {
 
   /**
    * Effectuer un achat (BUY)
+   * À implémenter: appel au bridge.py pour créer l'ordre
    */
   async executeBuyOrder(params) {
     this.validateOrderParams(params);
     const { symbol, volume, takeProfit, stopLoss } = params;
 
-    const result = await this.account.createMarketBuyOrder({
-      symbol: symbol,
-      volume: parseFloat(volume),
-      takeProfit: parseFloat(takeProfit),
-      stopLoss: parseFloat(stopLoss),
-      comment: 'Order from Pro Analyst Terminal'
-    });
+    // TODO: Appeler le bridge.py pour exécuter l'ordre
+    // const response = await fetch(`${MT5_BRIDGE_URL}/trade/buy`, {
+    //   method: 'POST',
+    //   body: JSON.stringify({symbol, volume, takeProfit, stopLoss})
+    // });
 
-    return result;
+    throw new Error('Not implemented - use bridge.py directly');
   }
 
   /**
    * Effectuer une vente (SELL)
+   * À implémenter: appel au bridge.py pour créer l'ordre
    */
   async executeSellOrder(params) {
     this.validateOrderParams(params);
     const { symbol, volume, takeProfit, stopLoss } = params;
 
-    const result = await this.account.createMarketSellOrder({
-      symbol: symbol,
-      volume: parseFloat(volume),
-      takeProfit: parseFloat(takeProfit),
-      stopLoss: parseFloat(stopLoss),
-      comment: 'Order from Pro Analyst Terminal'
-    });
+    // TODO: Appeler le bridge.py pour exécuter l'ordre
+    // const response = await fetch(`${MT5_BRIDGE_URL}/trade/sell`, {
+    //   method: 'POST',
+    //   body: JSON.stringify({symbol, volume, takeProfit, stopLoss})
+    // });
 
-    return result;
+    throw new Error('Not implemented - use bridge.py directly');
   }
 
   /**
    * Fermer une position
+   * À implémenter: appel au bridge.py
    */
   async closePosition(positionId) {
-    const result = await this.account.closePositionBySymbol(positionId);
-    return result;
+    // TODO: Appeler le bridge.py
+    throw new Error('Not implemented - use bridge.py directly');
   }
 
   /**
    * Récupérer les positions ouvertes
+   * À implémenter: appel au bridge.py
    */
   async getOpenPositions() {
-    const positions = await this.account.getPositions();
-    return positions.filter(p => p.profit !== undefined);
+    // TODO: Appeler le bridge.py
+    throw new Error('Not implemented - use bridge.py directly');
   }
 
   /**
    * Récupérer l'équilibre du compte
+   * À implémenter: appel au bridge.py
    */
   async getAccountBalance() {
-    const accountInfo = await this.account.getAccountInformation();
-    return {
-      balance: accountInfo.balance,
-      equity: accountInfo.equity,
-      margin: accountInfo.margin,
-      freeMargin: accountInfo.freeMargin,
-      marginLevel: accountInfo.marginLevel
-    };
+    // TODO: Appeler le bridge.py
+    throw new Error('Not implemented - use bridge.py directly');
   }
 }

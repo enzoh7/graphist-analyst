@@ -31,11 +31,10 @@ class AuthClient {
   static getToken(): string | null {
     return localStorage.getItem(TOKEN_KEY);
   }
-
   /**
    * Stocker le token et l'utilisateur
    */
-  static setToken(token: string, user: User): void {
+  static setToken(token: string, user : User): void {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(USER_KEY, JSON.stringify(user));
   }
