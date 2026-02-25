@@ -198,25 +198,6 @@
 
             <div id="auth-broker-section" class="auth-broker-section hidden">
                 <div class="auth-section-divider">
-                    <span>Configuration du Bridge Python</span>
-                </div>
-                <form id="broker-config-form" class="auth-form">
-                    <div class="form-group">
-                        <label for="bridge-url">URL du Bridge (localhost:5555)</label>
-                        <input type="url" id="bridge-url" placeholder="tcp://127.0.0.1:5555" value="tcp://127.0.0.1:5555" readonly />
-                    </div>
-                    <div class="form-group" style="background: #f0f0f0; padding: 10px; border-radius: 4px;">
-                        <p style="margin: 0; font-size: 12px; color: #666;">
-                            <strong>ℹ️ Info:</strong> Le bridge Python utilise maintenant ZeroMQ sur le port 5555.
-                            Les ordres seront exécutées via ce bridge ultra-rapide.
-                        </p>
-                    </div>
-                    <button type="submit" class="btn-secondary full-width" disabled>✓ Configuration automatique</button>
-                    <div id="broker-error" class="auth-error"></div>
-                    <div id="broker-success" class="auth-success"></div>
-                </form>
-
-                <div class="auth-section-divider" style="margin-top: 24px;">
                     <span>Identifiants MT5 (Stockage Sécurisé)</span>
                 </div>
                 <form id="mt5-credentials-form" class="auth-form">
@@ -257,15 +238,28 @@
                     </div>
                 </div>
 
+                <div class="auth-broker-section-in-user">
+                    <form id="broker-config-form" class="auth-form">
+                        <div class="form-group">
+                            <label for="bridge-url">URL du Bridge (localhost:5555)</label>
+                            <input type="url" id="bridge-url" placeholder="tcp://127.0.0.1:5555" value="tcp://127.0.0.1:5555" readonly />
+                        </div>
+                        <div id="broker-error" class="auth-error"></div>
+                        <div id="broker-success" class="auth-success" style="padding: 10px; border-radius: 4px;"></div>
+                    </form>
+                </div>
+
                 <div class="auth-preferences">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="pref-economic-news" checked />
-                        <span>Notifications des news économiques</span>
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="pref-explanations" checked />
-                        <span>Afficher les explications des news</span>
-                    </label>
+                    <div class="preferences-row">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="pref-economic-news" checked />
+                            <span>Notifications des news économiques</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="pref-explanations" checked />
+                            <span>Afficher les explications des news</span>
+                        </label>
+                    </div>
                     <label>
                         <span>Thème</span>
                         <select id="pref-theme">
