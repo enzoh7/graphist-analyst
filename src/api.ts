@@ -15,6 +15,52 @@ export function getMT5Symbol(displayedSymbol: string): string {
     return SYMBOL_MAPPING[displayedSymbol] || displayedSymbol;
 }
 
+// ========== GESTION SÉCURISÉE DU LOCALSTORAGE ==========
+export interface MT5Account {
+    login: string;
+    password?: string;
+    server: string;
+}
+
+export interface MT5Credentials {
+    demo: MT5Account | null;
+    real: MT5Account | null;
+}
+
+const STORAGE_KEY = 'mt5_credentials';
+
+export function saveMT5Credentials(accountType: 'demo' | 'real', login: string, password?: string, server?: string): void {
+    const credentials = getMT5Credentials();
+    
+    // Si on met juste à jour le login (ex: retour de l'API)
+    if (!password || !server) {
+        if (credentials[accountType]) {
+            credentials[accountType]!.login = login;
+        } else {
+            credentials[accountType] = { login, password: '', server: '' };
+        }
+    } else {
+        // Sauvegarde complète
+        credentials[accountType] = { login, password, server };
+    }
+    
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(credentials));
+    console.log(`✅ Identifiants ${accountType.toUpperCase()} sauvegardés`);
+}
+
+export function getMT5Credentials(): MT5Credentials {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored 
+        ? JSON.parse(stored) 
+        : { demo: null, real: null };
+}
+
+export function getMT5Account(accountType: 'demo' | 'real'): MT5Account | null {
+    const credentials = getMT5Credentials();
+    return credentials[accountType] || null;
+}
+
+
 // ========== BACKEND API CLIENT ==========
 export interface TradeOrder {
     symbol: string;
@@ -33,6 +79,13 @@ export interface TradeResponse {
     tp: number;
     sl: number;
     timestamp: string;
+}
+
+export interface SwitchAccountParams {
+    login: string | number;
+    password: string;
+    server: string;
+    accountType: 'demo' | 'real';
 }
 
 export class TradingApiClient {
@@ -63,6 +116,26 @@ export class TradingApiClient {
             body: JSON.stringify({ ...order, symbol: getMT5Symbol(order.symbol) }),
         });
         if (!response.ok) throw new Error('Erreur exécution');
+        return await response.json();
+    }
+
+    // 🔴 L'intégration propre du switch dans la classe existante (Style Gemini)
+    async switchAccount(params: SwitchAccountParams) {
+        const token = AuthClient.getToken();
+        
+        const response = await fetch(`${this.baseUrl}/api/account/switch`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+            },
+            body: JSON.stringify(params),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Erreur lors du changement de compte');
+        }
         return await response.json();
     }
 }
@@ -122,7 +195,7 @@ export class MarketDataService {
         } else if (typeof rawTime === 'number') {
             timestamp = rawTime;
         } else {
-            return Math.floor(Date.now() / 1000);// Sécurité : retourner l'heure actuelle si le format est inconnu
+            return Math.floor(Date.now() / 1000);
         }
         
         if (timestamp > 10000000000 ) {
@@ -130,17 +203,21 @@ export class MarketDataService {
         }
          return timestamp;
     }
+
     public async getHistory(): Promise<Candle[]> {
         try {
-            const response = await fetch(`${this.serverUrl}/history/${this.symbol}?limit=500&timeframe=${this.interval}`);// Récupère 500 bougies pour une analyse plus complète
-            if (!response.ok) return [];
+            const response = await fetch(`${this.serverUrl}/history/${this.symbol}?limit=500&timeframe=${this.interval}`);
+            if (!response.ok) {
+                console.warn(`⚠️ Erreur HTTP ${response.status} pour ${this.symbol}`);
+                return [];
+            }
 
             const data = await response.json();
 
             if (data.candles && data.candles.length > 0) {
             
                 const cleanCandles = data.candles.map((c: any) => ({
-                    time: this.normalizeTime(c.time)as any,
+                    time: this.normalizeTime(c.time) as any,
                     open: parseFloat(c.open),
                     high: parseFloat(c.high),
                     low: parseFloat(c.low),
@@ -150,12 +227,19 @@ export class MarketDataService {
 
                 cleanCandles.sort((a: any, b: any) => a.time - b.time);
 
-                const uniqueCandles =  cleanCandles.filter((candle: any, index: number, self: any[]) =>
+                const uniqueCandles = cleanCandles.filter((candle: any, index: number, self: any[]) =>
                     index === 0 || candle.time !== self[index - 1].time
                 );
                 const last = uniqueCandles[uniqueCandles.length - 1];
-                this.currentCandle = { ... last};
-                return uniqueCandles        ;
+                this.currentCandle = { ...last };
+                
+                if (data.market_status === 'closed') {
+                    console.warn(`📊 ${this.symbol}: ${uniqueCandles.length} bougies chargées (Marché fermé)`);
+                } else {
+                    console.log(`✅ ${this.symbol}: ${uniqueCandles.length} bougies chargées`);
+                }
+                
+                return uniqueCandles;
             }
             return [];
         } catch (e) {
@@ -164,18 +248,17 @@ export class MarketDataService {
         }
     }
 
-public connect() {
+    public connect() {
         this.isConnected = true;
         
-        // 🔴 NOUVEAU : Connexion instantanée via WebSocket
+        // Connexion instantanée via WebSocket
         this.socket = io(this.serverUrl);
 
         this.socket.on('connect', () => {
-            // On dit au serveur : "Je veux les prix de cette devise"
             this.socket?.emit('subscribe_price', this.symbol);
         });
 
-        // ⚡ Le serveur "pousse" les prix ici automatiquement à la milliseconde près
+        // Le serveur "pousse" les prix ici automatiquement à la milliseconde près
         this.socket.on('price_update', (data: any) => {
             // Coupe-circuit : on ignore si on a changé de devise entre temps
             if (!this.isConnected || data.symbol !== this.symbol) return;
@@ -206,7 +289,6 @@ public connect() {
                         volume: 0 
                     };
                 } else {
-                    // Mise à jour de la bougie en cours
                     this.currentCandle.high = Math.max(this.currentCandle.high, data.ask);
                     this.currentCandle.low = Math.min(this.currentCandle.low, data.ask);
                     this.currentCandle.close = data.ask;
@@ -219,7 +301,7 @@ public connect() {
 
     public disconnect() {
         this.isConnected = false;
-        // 🔴 NOUVEAU : On coupe le tuyau proprement quand on change de devise
+        // On coupe le tuyau proprement quand on change de devise
         if (this.socket) {
             this.socket.disconnect();
             this.socket = null;

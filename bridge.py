@@ -35,6 +35,42 @@ def get_filling_mode():
             logger.warning("⚠️  Aucun mode de remplissage spécifique trouvé, utilisation du mode par défaut")
             return 1  # FOK par défaut
 
+# ========== CACHE LOCAL DES BOUGIES ==========
+import json
+import os
+from datetime import datetime
+
+_cache_dir = ".cache_bougies"
+if not os.path.exists(_cache_dir):
+    os.makedirs(_cache_dir)
+
+def _get_cache_file(symbol, timeframe):
+    """Chemin du fichier cache pour un symbole + timeframe"""
+    return os.path.join(_cache_dir, f"{symbol}_{timeframe}.json")
+
+def _load_cached_history(symbol, timeframe):
+    """Charger les bougies du cache local"""
+    cache_file = _get_cache_file(symbol, timeframe)
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r') as f:
+                data = json.load(f)
+                logger.info(f"📦 Cache trouvé pour {symbol} {timeframe}: {len(data)} bougies")
+                return data
+        except Exception as e:
+            logger.warning(f"⚠️ Erreur lecture cache {symbol}: {e}")
+    return None
+
+def _save_cached_history(symbol, timeframe, candles):
+    """Enregistrer les bougies dans le cache local"""
+    cache_file = _get_cache_file(symbol, timeframe)
+    try:
+        with open(cache_file, 'w') as f:
+            json.dump(candles, f)
+            logger.info(f"💾 Cache sauvegardé pour {symbol} {timeframe}: {len(candles)} bougies")
+    except Exception as e:
+        logger.warning(f"⚠️ Erreur sauvegarde cache {symbol}: {e}")
+
 # ========== CACHE DES SYMBOLES (Ultra-Rapide) ==========
 _symbol_cache = {}
 
@@ -84,7 +120,12 @@ while True:
             if tick:
                 response = {"status": "success", "bid": tick.bid, "ask": tick.ask}
             else:
-                response = {"status": "error", "message": f"Prix introuvable pour {symbol}"}
+                # 🔴 Marché fermé, pas une erreur - retourner statut explicite
+                sym_info = mt5.symbol_info(symbol)
+                if sym_info:
+                    response = {"status": "market_closed", "message": f"Marché fermé pour {symbol}", "symbol_exists": True}
+                else:
+                    response = {"status": "error", "message": f"Symbole introuvable: {symbol}", "symbol_exists": False}
 
         elif action == "history":
             symbol = get_real_symbol(req.get("symbol"))
@@ -106,12 +147,22 @@ while True:
             mt5.symbol_select(symbol, True)
             rates = mt5.copy_rates_from_pos(symbol, tf, 0, limit)
 
+            # 🔴 SI MT5 retourne None ou vide, essayer le cache
             if rates is not None and len(rates) > 0:
                 df = pd.DataFrame(rates)
                 df['time'] = df['time'].astype(int)
-                response = {"status": "success", "candles": df.to_dict(orient="records")}
+                candles = df.to_dict(orient="records")
+                # Enregistrer dans le cache pour la prochaine fois
+                _save_cached_history(symbol, tf_str, candles)
+                response = {"status": "success", "candles": candles, "from_cache": False}
             else:
-                response = {"status": "error", "message": f"Historique introuvable pour {symbol}"}
+                # Historique vide en direct, essayer le cache
+                cached = _load_cached_history(symbol, tf_str)
+                if cached:
+                    response = {"status": "success", "candles": cached, "from_cache": True, "message": "Données du cache (marché fermé)"}
+                else:
+                    # Pas de cache - vrai erreur
+                    response = {"status": "no_data", "message": f"Marché fermé pour {symbol} - pas de cache disponible", "candles": []}
 
         elif action == "trade":
             symbol = get_real_symbol(req.get("symbol"))
@@ -208,9 +259,20 @@ while True:
 
     # === SYSTÈME DE LOG HAUTE-VITESSE ===
     if action and action != "health": # On ignore le "ping" de 10s pour ne pas polluer
-        if action == "history" and response.get("status") == "success":
+        if action == "history":
             nb_candles = len(response.get("candles", []))
-            logger.info(f"⚡ ZMQ | Action: {action.upper():<7} | Symbole: {symbol:<8} | Résultat: {nb_candles} bougies")
+            from_cache = response.get("from_cache", False)
+            cache_str = "📦 CACHE" if from_cache else "✓ DIRECT"
+            status_str = f"{nb_candles} bougies ({cache_str})"
+            logger.info(f"⚡ ZMQ | Action: {action.upper():<7} | Symbole: {symbol:<8} | Résultat: {status_str}")
+        elif action == "price":
+            status = response.get("status", "error")
+            if status == "success":
+                logger.info(f"⚡ ZMQ | Action: {action.upper():<7} | Symbole: {symbol:<8} | bid={response.get('bid'):.2f}, ask={response.get('ask'):.2f}")
+            elif status == "market_closed":
+                logger.info(f"⚡ ZMQ | Action: {action.upper():<7} | Symbole: {symbol:<8} | 🔴 MARCHÉ FERMÉ")
+            else:
+                logger.error(f"⚡ ZMQ | Action: {action.upper():<7} | Symbole: {symbol:<8} | ❌ {status}")
         else:
             status = response.get("status", "error")
             requested_symbol = req.get('symbol', 'N/A') if 'req' in locals() else 'N/A'

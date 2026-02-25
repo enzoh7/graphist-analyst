@@ -690,11 +690,16 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   width: 90%;
-  max-width: 420px;
+  max-width: 620px;
   max-height: 90vh;
   overflow-y: auto;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
   animation: modalSlideIn 0.3s ease-out;
+  scrollbar-width: none;
+}
+
+.auth-modal-content::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes modalSlideIn {
@@ -709,7 +714,7 @@ body {
 }
 
 .auth-modal-header {
-  padding: 20px;
+  padding: 16px;
   border-bottom: 1px solid var(--border-color);
   display: flex;
   justify-content: space-between;
@@ -926,7 +931,7 @@ body {
 /* ========== CONFIGURATION BROKER ========== */
 
 .auth-broker-section {
-  padding: 20px;
+  padding: 15px;
   border-top: 1px solid var(--border-color);
   max-height: 400px;
   overflow-y: auto;
@@ -942,8 +947,8 @@ body {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 1px;
-  margin-bottom: 16px;
-  padding: 8px 0;
+  margin-bottom: 10px;
+  padding: 6px 0;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -979,6 +984,16 @@ body {
   margin-bottom: 16px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border-color);
+}
+
+.preferences-row {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.preferences-row .checkbox-label {
+  flex: 1;
 }
 
 .checkbox-label {
@@ -1581,6 +1596,74 @@ input:checked + .slider:before {
   padding: 12px;
   border-radius: 6px;
   border: 1px solid var(--border-color);
+}
+#server-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 14px;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+#server-status.online {
+  color: #10b981;
+  background-color: rgba(16, 185, 129, 0.1);
+}
+
+#server-status.offline {
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+#server-status::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+  animation: pulse 2s infinite;
+}
+
+#account-type-toggle {
+  cursor: pointer;
+  accent-color: #3b82f6;
+}
+
+.notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 500;
+  z-index: 9999;
+  animation: slideIn 0.3s ease;
+}
+
+.notification-success {
+  background-color: #d1fae5;
+  color: #065f46;
+  border: 1px solid #6ee7b7;
+}
+
+.notification-error {
+  background-color: #fee2e2;
+  color: #7f1d1d;
+  border: 1px solid #fca5a5;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(400px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
 }
 
 @media (max-width: 450px) {

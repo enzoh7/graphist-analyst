@@ -51,6 +51,8 @@ class TradingPanel {
     private currentPrice: number = 0;
     private priceLastUpdateTime: number = 0;
     private inactivityTimeout: any = null; // 🔴 Chrono d'inactivité
+    
+    private currentLogin: string = localStorage.getItem('active_mt5_login') || 'Inconnu';
 
     constructor(tradingPlatform?: TradingPlatform) {
         this.tradingClient = new TradingApiClient();
@@ -66,8 +68,19 @@ class TradingPanel {
         }
 
         this.setupEventListeners();
+        this.setupAccountManagement(); // 🔴 NOUVEAU : Initialise le switch de compte
         this.checkServerHealth();
         setInterval(() => this.checkServerHealth(), 5000);
+    }
+
+    // : Notifications flottantes style "Toast"
+    private showNotification(message: string, type: 'success' | 'error' | 'warning' = 'success'): void {
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+
+        setTimeout(() => notification.remove(), 4000);
     }
 
     private setupEventListeners() {
@@ -78,7 +91,6 @@ class TradingPanel {
         const entryInput = document.getElementById('entry-price') as HTMLInputElement;
         const volumeInput = document.getElementById('trade-volume') as HTMLInputElement;
 
-        // Initialiser trade-volume avec 0.01 par défaut
         if (volumeInput && !volumeInput.value) {
             volumeInput.value = '0.01';
         }
@@ -89,7 +101,6 @@ class TradingPanel {
             entryInput.addEventListener('input', () => this.calculateRiskReward());
         }
 
-        // Synchroniser le symbole du graphique avec le trading panel
         const assetSelect = document.getElementById('asset-select') as HTMLSelectElement;
         const symbolSelect = document.getElementById('trade-symbol') as HTMLSelectElement;
         
@@ -97,7 +108,6 @@ class TradingPanel {
             assetSelect.addEventListener('change', () => {
                 const selectedSymbol = assetSelect.value;
                 symbolSelect.value = selectedSymbol;
-                console.log(`📊 Symbole synchronisé: ${selectedSymbol}`);
                 this.updateCurrentPrice();
             });
         }
@@ -111,20 +121,138 @@ class TradingPanel {
         setTimeout(() => this.updateCurrentPrice(), 100);
     }
 
+    //  : Gestion des formulaires MT5 et du bouton Switch Demo/Real
+    private setupAccountManagement() {
+        const credForm = document.getElementById('mt5-credentials-form') as HTMLFormElement;
+        const toggle = document.getElementById('account-type-toggle') as HTMLInputElement;
+        const demoLabel = document.getElementById('label-demo');
+        const realLabel = document.getElementById('label-real');
+
+        // 1. Charger les identifiants sauvegardés dans les inputs au démarrage
+        const savedCreds = JSON.parse(localStorage.getItem('mt5_credentials') || '{"demo":null,"real":null}');
+        if (savedCreds.demo) {
+            (document.getElementById('demo-login') as HTMLInputElement).value = savedCreds.demo.login || '';
+            (document.getElementById('demo-password') as HTMLInputElement).value = savedCreds.demo.password || '';
+            (document.getElementById('demo-server') as HTMLInputElement).value = savedCreds.demo.server || '';
+        }
+        if (savedCreds.real) {
+            (document.getElementById('real-login') as HTMLInputElement).value = savedCreds.real.login || '';
+            (document.getElementById('real-password') as HTMLInputElement).value = savedCreds.real.password || '';
+            (document.getElementById('real-server') as HTMLInputElement).value = savedCreds.real.server || '';
+        }
+
+        // 2. Écouter le bouton "Sauvegarder les identifiants"
+        if (credForm) {
+            credForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                
+                const demoLogin = (document.getElementById('demo-login') as HTMLInputElement)?.value;
+                const demoPassword = (document.getElementById('demo-password') as HTMLInputElement)?.value;
+                const demoServer = (document.getElementById('demo-server') as HTMLInputElement)?.value;
+
+                const realLogin = (document.getElementById('real-login') as HTMLInputElement)?.value;
+                const realPassword = (document.getElementById('real-password') as HTMLInputElement)?.value;
+                const realServer = (document.getElementById('real-server') as HTMLInputElement)?.value;
+
+                const creds = {
+                    demo: (demoLogin && demoPassword && demoServer) ? { login: demoLogin, password: demoPassword, server: demoServer } : null,
+                    real: (realLogin && realPassword && realServer) ? { login: realLogin, password: realPassword, server: realServer } : null
+                };
+                
+                localStorage.setItem('mt5_credentials', JSON.stringify(creds));
+                this.showNotification('✅ Identifiants MT5 sauvegardés avec succès !', 'success');
+            });
+        }
+
+        // 3. Écouter le bouton Switch (Demo / Real)
+        if (toggle) {
+            // Remettre visuellement le toggle dans son dernier état connu
+            const activeType = localStorage.getItem('active_mt5_type') || 'demo';
+            toggle.checked = activeType === 'real';
+            if (activeType === 'real') {
+                demoLabel?.classList.remove('active');
+                realLabel?.classList.add('active');
+            }
+
+            toggle.addEventListener('change', async (e) => {
+                const isReal = (e.target as HTMLInputElement).checked;
+                const targetAccountType = isReal ? 'real' : 'demo';
+                
+                if (isReal) {
+                    demoLabel?.classList.remove('active');
+                    realLabel?.classList.add('active');
+                } else {
+                    demoLabel?.classList.add('active');
+                    realLabel?.classList.remove('active');
+                }
+
+                const currentCreds = JSON.parse(localStorage.getItem('mt5_credentials') || '{"demo":null,"real":null}');
+                const targetCreds = currentCreds[targetAccountType];
+
+                if (!targetCreds || !targetCreds.login || !targetCreds.password || !targetCreds.server) {
+                    this.showNotification(`❌ Veuillez d'abord sauvegarder les identifiants pour le compte ${targetAccountType.toUpperCase()} dans les paramètres.`, 'error');
+                    
+                    // Annuler l'animation visuelle du bouton si on a pas les ID
+                    toggle.checked = !isReal;
+                    if (!isReal) { demoLabel?.classList.remove('active'); realLabel?.classList.add('active'); } 
+                    else { demoLabel?.classList.add('active'); realLabel?.classList.remove('active'); }
+                    return;
+                }
+
+                try {
+                    // UI : Mode chargement
+                    if (this.serverStatus) {
+                        this.serverStatus.innerHTML = `⏳ Connexion ${targetAccountType.toUpperCase()}...`;
+                        this.serverStatus.className = 'server-status';
+                        this.serverStatus.style.color = '#ff9800'; 
+                    }
+
+                    // Exécution réseau
+                    const result = await this.tradingClient.switchAccount({
+                        login: targetCreds.login,
+                        password: targetCreds.password,
+                        server: targetCreds.server,
+                        accountType: targetAccountType
+                    });
+
+                    // Succès : Sauvegarde et rafraîchissement
+                    this.currentLogin = result.login || targetCreds.login;
+                    localStorage.setItem('active_mt5_type', targetAccountType);
+                    localStorage.setItem('active_mt5_login', this.currentLogin);
+                    
+                    if (this.serverStatus) this.serverStatus.style.color = ''; 
+                    this.checkServerHealth(); 
+                    
+                    this.showNotification(`✅ Switch réussi vers ${targetAccountType.toUpperCase()} (Login: ${this.currentLogin})`, 'success');
+
+                } catch (err: any) {
+                    this.showNotification(`❌ Échec de connexion MT5 : ${err.message}`, 'error');
+                    
+                    // Rollback
+                    toggle.checked = !isReal; 
+                    if (!isReal) { demoLabel?.classList.remove('active'); realLabel?.classList.add('active'); } 
+                    else { demoLabel?.classList.add('active'); realLabel?.classList.remove('active'); }
+                    
+                    if (this.serverStatus) this.serverStatus.style.color = '';
+                    this.checkServerHealth();
+                }
+            });
+        }
+    }
+
+    //  : Affichage propre de l'état du serveur (Style Claude)
     private async checkServerHealth() {
         try {
             const healthData = await this.tradingClient.checkHealth();
             
             if (this.serverStatus && healthData) {
                 if (healthData.bridgeConnected) {
-                    this.serverStatus.textContent = '● Serveur (3000) + Bridge (5000) ✓';
-                    this.serverStatus.classList.remove('offline');
-                    this.serverStatus.classList.add('online');
+                    this.serverStatus.innerHTML = `● Connecté au compte <strong>${this.currentLogin}</strong>`;
+                    this.serverStatus.className = 'server-status online';
                     (this.form.querySelector('#trade-submit') as HTMLButtonElement).disabled = false;
                 } else {
-                    this.serverStatus.textContent = '⚠️ Serveur (3000) OK, Bridge (5000) ✗';
-                    this.serverStatus.classList.add('offline');
-                    this.serverStatus.classList.remove('online');
+                    this.serverStatus.textContent = '● Bridge déconnecté';
+                    this.serverStatus.className = 'server-status offline';
                     (this.form.querySelector('#trade-submit') as HTMLButtonElement).disabled = true;
                 }
             }
@@ -132,7 +260,7 @@ class TradingPanel {
             console.error('Erreur vérification serveur:', error);
             if (this.serverStatus) {
                 this.serverStatus.textContent = '● Serveur indisponible';
-                this.serverStatus.classList.add('offline');
+                this.serverStatus.className = 'server-status offline';
             }
         }
     }
@@ -157,7 +285,6 @@ class TradingPanel {
         }
     }
 
-    // 🔴 MODIFIÉ : On ne met plus N/A si ça plante (pour garder le prix du weekend)
     public updateCurrentPrice() {
         const symbol = (document.getElementById('trade-symbol') as HTMLSelectElement).value || 'XAUUSD';
         
@@ -179,7 +306,6 @@ class TradingPanel {
             });
     }
 
-    // 🔴 MODIFIÉ : Réinitialisation du chronomètre d'inactivité
     public updateLivePrice(ask: number) {
         if (ask <= 0) return;
         
@@ -198,7 +324,6 @@ class TradingPanel {
         
         this.calculateRiskReward();
 
-        // Si on reçoit un prix, on cache l'étiquette "Marché inactif"
         if (this.marketStatusEl) {
             this.marketStatusEl.style.display = 'none';
         }
@@ -207,13 +332,11 @@ class TradingPanel {
             clearTimeout(this.inactivityTimeout);
         }
 
-        // Si aucun tick n'arrive dans les 5 secondes (ex: Weekend), on affiche l'étiquette
         this.inactivityTimeout = setTimeout(() => {
             this.setMarketInactive();
         }, 5000);
     }
 
-    // 🔴 NOUVEAU : Fonction pour afficher que le marché dort
     public setMarketInactive() {
         if (this.marketStatusEl) {
             this.marketStatusEl.style.display = 'inline';
@@ -224,7 +347,7 @@ class TradingPanel {
         e.preventDefault();
 
         if (!AuthClient.isAuthenticated()) {
-            this.showStatus('❌ Vous devez être connecté pour trader!', 'error');
+            this.showNotification('❌ Vous devez être connecté pour trader!', 'error');
             console.warn('⚠️ Tentative de trade sans authentification');
             return;
         }
@@ -239,7 +362,7 @@ class TradingPanel {
         const sl = slInput ? parseFloat(slInput) : null;
 
         if (!symbol || !volume) {
-            this.showStatus('❌ Symbole et volume sont requis', 'error');
+            this.showNotification('❌ Symbole et volume sont requis', 'error');
             return;
         }
 
@@ -315,6 +438,12 @@ class TradingPanel {
         if (!this.orderStatusEl) return;
         this.orderStatusEl.className = 'order-status';
         this.orderStatusEl.textContent = '';
+    }
+
+    public clearMarketInactiveMessage() {
+        if (this.marketStatusEl) {
+            this.marketStatusEl.style.display = 'none';
+        }
     }
 }
 
@@ -983,7 +1112,6 @@ class TradingPlatform {
         });
     }
 
-    // 🔴 MODIFIÉ : Le système qui sauve le graphique pendant le weekend !
     private async loadMarketData(symbol: string, interval: string) {
         console.log(`📡 Chargement: ${symbol} ${interval}`);
 
@@ -1006,10 +1134,15 @@ class TradingPlatform {
                 this.candlesSeries.setData(history as any);
                 console.log(`✅ ${history.length} bougies chargées`);
 
-                // 🔴 SOLUTION DU WEEKEND : On force le prix à s'afficher avec la toute dernière bougie connue (vendredi soir)
                 if (this.tradingPanel) {
                     const lastCandle = history[history.length - 1];
                     this.tradingPanel.updateLivePrice(lastCandle.close);
+                    this.tradingPanel.clearMarketInactiveMessage();
+                }
+            } else {
+                console.warn(`⚠️ Aucune donnée pour ${symbol} - afficher "Marché inactif"`);
+                if (this.tradingPanel) {
+                    this.tradingPanel.setMarketInactive();
                 }
             }
 
@@ -1025,6 +1158,9 @@ class TradingPlatform {
             }
         } catch (error) {
             console.error(`❌ Erreur chargement ${symbol}:`, error);
+            if (this.tradingPanel) {
+                this.tradingPanel.setMarketInactive();
+            }
         }
     }
 
@@ -1136,6 +1272,31 @@ function setupTradingButtons() {
     if (!btnBuy || !btnSell || !btnConfig || !tradeForm || !tradingPanel) return;
 
     updateTradingButtonsVisibility();
+
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
+            e.preventDefault(); 
+            
+            const quickButtonsContainer = document.querySelector('.trading-quick-buttons') as HTMLElement;
+            const serverStatus = document.getElementById('server-status');
+
+            if (!quickButtonsContainer) return;
+
+            if (!AuthClient.isAuthenticated()) {
+                console.warn('🔐 Authentification requise pour afficher les boutons.');
+                return;
+            }
+
+            if (quickButtonsContainer.style.display === 'none' || quickButtonsContainer.style.display === '') {
+                quickButtonsContainer.style.display = 'flex';
+            } else {
+                quickButtonsContainer.style.display = 'none';
+                if (tradingPanel) tradingPanel.style.display = 'none';
+                if (tradeForm) tradeForm.style.display = 'none';
+                if (serverStatus) serverStatus.style.display = 'none';
+            }
+        }
+    });
 
     btnBuy.addEventListener('click', () => {
         const orderTypeInput = document.querySelector('input[name="order-type"][value="buy"]') as HTMLInputElement;

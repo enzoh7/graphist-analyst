@@ -90,6 +90,8 @@ async function askPython(action, payload = {}) {
 
 // ========== LA BOUCLE HAUTE FRÉQUENCE (ZMQ -> WEBSOCKET) ==========
 let lastPrices = {};
+let marketStatus = {}; // 🔴 Tracker l'état du marché par symbole
+
 setInterval(async () => {
     if (!bridgeConnected || activeSubscriptions.size === 0) return;
 
@@ -102,6 +104,7 @@ setInterval(async () => {
             const data = await askPython('price', { symbol: cleanSymbol });// Demande le prix actuel au Python
             
             if (data.status === 'success') {
+                marketStatus[symbol] = 'open'; // Marché ouvert
                 const priceKey = `${data.bid}_${data.ask}`;
                 // Le prix a-t-il bougé depuis la dernière milliseconde ?
                 if (lastPrices[symbol] !== priceKey) {
@@ -109,6 +112,14 @@ setInterval(async () => {
                     // OUI ! On le pousse vers le frontend (plus besoin de fetch !)
                     io.emit('price_update', { symbol, ...data }); 
                 }
+            } else if (data.status === 'market_closed') {
+                marketStatus[symbol] = 'closed'; // Marché fermé
+                // 🔴 Signaler au frontend que le marché est fermé
+                io.emit('market_status', { symbol, status: 'closed', message: data.message }); 
+                console.log(`📊 ${symbol}: Marché fermé`);
+            } else {
+                marketStatus[symbol] = 'error';
+                console.warn(`⚠️ Erreur prix pour ${symbol}: ${data.message}`);
             }
         } catch (e) { /* Silence pour ne pas polluer */ }
     }
@@ -221,10 +232,28 @@ app.get('/history/:symbol', async (req, res) => {
         
         // 🛡️ Envoi au Bridge via TCP
         const result = await askPython('history', { symbol: cleanSymbol, timeframe, limit });
-        res.json({ candles: result.candles || [] }); 
+        
+        // 🔴 Gérer les cas de marché fermé
+        if (result.status === 'success') {
+            res.json({ candles: result.candles || [], market_status: 'open' });
+        } else if (result.status === 'no_data') {
+            // Marché fermé mais symbole existe - retourner les données vides avec le statut
+            res.json({ 
+                candles: result.candles || [], 
+                market_status: 'closed',
+                message: result.message 
+            });
+        } else {
+            // Erreur réelle (symbole intro vable)
+            res.status(400).json({ 
+                error: result.message,
+                market_status: 'error',
+                candles: []
+            });
+        }
     } catch (e) {
         console.error('❌ Erreur historique:', e.message);
-        res.status(500).json({ error: 'Erreur serveur' });
+        res.status(500).json({ error: 'Erreur serveur', candles: [] });
     }
 });
 
